@@ -1,0 +1,2 @@
+
+export { mount } from './bootstrap';

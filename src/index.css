@@ -1,0 +1,243 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Original theme variables - keeping for compatibility */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 84% 4.9%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+    
+    /* Agent colors */
+    --agent-primary: 222.2 84% 4.9%;
+    --agent-secondary: 210 40% 96.1%;
+    --agent-accent: 222.2 84% 4.9%;
+    --agent-dark: 222.2 47.4% 11.2%;
+    --agent-light: 210 40% 98%;
+    --agent-success: 142 76% 36%;
+    --agent-warning: 37 100% 50%;
+    --agent-error: 0 84% 60%;
+    --agent-surface: 0 0% 100%;
+    --agent-text: 222.2 84% 4.9%;
+    
+    /* New custom color scheme */
+    --bg: 0 0% 100%;
+    --bg-muted: 0 0% 95.3%;
+    --fg: 0 0% 10.2%;
+    --fg-muted: 0 0% 33.3%;
+    --brand-purple: 271 86% 62%;
+    --brand-blue: 222 84% 53%;
+    --brand-pink: 292 91% 61%;
+    --border: 0 0% 89.4%;
+    --input-bg: 0 0% 100%;
+    --input-border: 0 0% 80%;
+    --focus-ring: 271 86% 62%;
+    --success: 142 71% 45%;
+    --warning: 38 93% 50.4%;
+    --destructive: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 0 0% 100%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 0 0% 100%;
+    
+    /* Agent dark mode colors */
+    --agent-dark-bg: 222.2 84% 4.9%;
+    --agent-primary: 0 0% 100%;
+    --agent-secondary: 217.2 32.6% 17.5%;
+    --agent-accent: 0 0% 100%;
+    --agent-dark: 222.2 84% 4.9%;
+    --agent-light: 210 40% 98%;
+    --agent-success: 142 76% 36%;
+    --agent-warning: 37 90% 50%;
+    --agent-error: 0 74% 50%;
+    --agent-surface: 222.2 84% 4.9%;
+    --agent-text: 210 40% 98%;
+    
+    /* New custom dark color scheme */
+    --bg: 0 0% 5.9%;
+    --bg-muted: 0 0% 9.0%;
+    --fg: 0 0% 100%;
+    --fg-muted: 0 0% 65%;
+    --brand-purple: 271 86% 62%;
+    --brand-blue: 222 84% 53%;
+    --brand-pink: 292 91% 61%;
+    --border: 0 0% 16.5%;
+    --input-bg: 0 0% 11.8%;
+    --input-border: 0 0% 22.7%;
+    --focus-ring: 271 86% 62%;
+    --success: 142 71% 45%;
+    --warning: 47 96% 55.1%;
+    --destructive: 0 84% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary/30 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-primary/50;
+  }
+  
+  button, a, input, select, textarea {
+    @apply transition-all duration-200;
+  }
+  
+  *:focus-visible {
+    @apply outline-none ring-2 ring-primary/50 ring-offset-2 ring-offset-background;
+  }
+  
+  .dark body {
+    background: hsl(var(--background));
+    background-attachment: fixed;
+    background-size: cover;
+  }
+  
+  .dark .min-h-screen {
+    background: transparent;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/90 backdrop-blur-sm border border-white/20 shadow-sm dark:bg-black/20 dark:border-white/10;
+  }
+  
+  .agent-button {
+    @apply px-4 py-2 rounded-md bg-agent-primary text-white shadow-sm hover:bg-agent-primary/90 focus:ring-2 focus:ring-primary/50 transition-all duration-200 dark:bg-agent-primary dark:text-slate-800 dark:hover:bg-agent-light/90;
+  }
+  
+  .agent-button-secondary {
+    @apply px-4 py-2 rounded-md bg-secondary text-primary shadow-sm hover:bg-secondary/90 focus:ring-2 focus:ring-primary/50 transition-all duration-200;
+  }
+  
+  .fade-mask {
+    mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+  }
+  
+  .card-hover {
+    @apply transition-all duration-300 hover:translate-y-[-2px] hover:shadow-md;
+  }
+  
+  .gradient-fade-bottom {
+    @apply absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background to-transparent z-10;
+  }
+  
+  .glass-morphism {
+    @apply backdrop-blur-lg bg-white/5 dark:bg-black/30 border border-white/10 rounded-lg shadow-sm;
+  }
+  
+  .neo-blur {
+    @apply backdrop-blur-2xl bg-white/10 dark:bg-card border border-white/10 dark:border-white/5;
+  }
+  
+  .agent-toggle-switch {
+    @apply relative inline-flex items-center h-8 rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-agent-primary/50 focus:ring-offset-2;
+  }
+  
+  .agent-toggle-switch.active {
+    @apply bg-agent-primary;
+  }
+  
+  .agent-toggle-switch.inactive {
+    @apply bg-gray-200 dark:bg-muted;
+  }
+  
+  .agent-toggle-handle {
+    @apply absolute w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md;
+  }
+  
+  .agent-toggle-label {
+    @apply text-xs font-semibold w-full text-center transition-opacity duration-300;
+  }
+  
+  .dark .card,
+  .dark [class*="Card"] {
+    @apply bg-card border-border;
+  }
+  
+  .dark input,
+  .dark textarea,
+  .dark select {
+    @apply bg-input border-border;
+  }
+  
+  /* Custom brand components using new color scheme */
+  .brand-button {
+    @apply bg-brandPurple text-white px-4 py-2 rounded-md hover:bg-gradient-to-r hover:from-brandBlue hover:to-brandPink transition-all duration-300;
+  }
+  
+  .brand-card {
+    @apply bg-bg text-fg border border-border p-4 rounded-lg shadow-sm;
+  }
+  
+  .brand-input {
+    @apply bg-inputBg border border-inputBorder rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-focusRing focus:border-transparent;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
