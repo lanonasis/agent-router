@@ -678,32 +678,52 @@ const AgentDetails = () => {
         </CardContent>
       </Card>
       
-      <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="mt-8">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="setup" className="text-sm">
-            <span className="flex items-center gap-2">
-              <Cog className="h-4 w-4" />
-              Setup
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="text-sm">
-            <span className="flex items-center gap-2">
-              <Cpu className="h-4 w-4" />
-              Settings
-            </span>
-          </TabsTrigger>
-        </TabsList>
-        
-        <div className="mt-6">
-          <TabsContent value="setup" className="space-y-6">
-            <AgentSetupStepper agent={agent} />
-          </TabsContent>
-          
-          <TabsContent value="settings" className="space-y-6">
-            <AgentConfigSettings agent={agent} onAgentUpdate={handleAgentUpdate} />
-          </TabsContent>
-        </div>
-      </Tabs>
+      {(() => {
+        const agentDocs = getAgentDocs(agent.id);
+        const tabCount = agentDocs ? 3 : 2;
+        return (
+          <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="mt-8">
+            <TabsList className={`grid w-full grid-cols-${tabCount}`}>
+              <TabsTrigger value="setup" className="text-sm">
+                <span className="flex items-center gap-2">
+                  <Cog className="h-4 w-4" />
+                  Setup
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="settings" className="text-sm">
+                <span className="flex items-center gap-2">
+                  <Cpu className="h-4 w-4" />
+                  Settings
+                </span>
+              </TabsTrigger>
+              {agentDocs && (
+                <TabsTrigger value="docs" className="text-sm">
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Documentation
+                  </span>
+                </TabsTrigger>
+              )}
+            </TabsList>
+            
+            <div className="mt-6">
+              <TabsContent value="setup" className="space-y-6">
+                <AgentSetupStepper agent={agent} />
+              </TabsContent>
+              
+              <TabsContent value="settings" className="space-y-6">
+                <AgentConfigSettings agent={agent} onAgentUpdate={handleAgentUpdate} />
+              </TabsContent>
+
+              {agentDocs && (
+                <TabsContent value="docs" className="space-y-6">
+                  <AgentDocumentationTab docs={agentDocs} agentName={agent.name} />
+                </TabsContent>
+              )}
+            </div>
+          </Tabs>
+        );
+      })()}
 
       <CallInterface
         open={isDirectCallActive}
