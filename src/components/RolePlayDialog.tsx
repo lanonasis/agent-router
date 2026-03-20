@@ -306,7 +306,7 @@ export const RolePlayDialog = ({
     recordingTimerRef.current = setInterval(() => {
       setRecordingProgress(prev => {
         if (prev >= 100) {
-          clearInterval(recordingTimerRef.current as NodeJS.Timeout);
+          clearInterval(recordingTimerRef.current as ReturnType<typeof setInterval>);
           setIsPlayingRecording(false);
           return 100;
         }

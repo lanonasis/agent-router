@@ -15,7 +15,7 @@ const mount = (el: HTMLElement) => {
 };
 
 // If we're in development and running in isolation
-if (process.env.NODE_ENV === 'development') {
+if (import.meta.env.DEV) {
   const devRoot = document.getElementById('root');
   if (devRoot) {
     mount(devRoot);
