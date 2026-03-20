@@ -680,7 +680,6 @@ const AgentDetails = () => {
       
       {(() => {
         const agentDocs = getAgentDocs(agent.id);
-        const tabCount = agentDocs ? 3 : 2;
         return (
           <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="mt-8">
             <TabsList className={agentDocs ? "grid w-full grid-cols-3" : "grid w-full grid-cols-2"}>
