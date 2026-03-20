@@ -64,9 +64,9 @@ export const RolePlayDialog = ({
   const [isPlayingRecording, setIsPlayingRecording] = useState(false);
   const [recordingProgress, setRecordingProgress] = useState(0);
   
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [phoneNumberError, setPhoneNumberError] = useState('');
@@ -306,7 +306,7 @@ export const RolePlayDialog = ({
     recordingTimerRef.current = setInterval(() => {
       setRecordingProgress(prev => {
         if (prev >= 100) {
-          clearInterval(recordingTimerRef.current as NodeJS.Timeout);
+          clearInterval(recordingTimerRef.current as ReturnType<typeof setInterval>);
           setIsPlayingRecording(false);
           return 100;
         }
