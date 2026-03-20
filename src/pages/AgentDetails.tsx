@@ -683,7 +683,7 @@ const AgentDetails = () => {
         const tabCount = agentDocs ? 3 : 2;
         return (
           <Tabs defaultValue={activeTab} onValueChange={setActiveTab} className="mt-8">
-            <TabsList className={`grid w-full grid-cols-${tabCount}`}>
+            <TabsList className={agentDocs ? "grid w-full grid-cols-3" : "grid w-full grid-cols-2"}>
               <TabsTrigger value="setup" className="text-sm">
                 <span className="flex items-center gap-2">
                   <Cog className="h-4 w-4" />
