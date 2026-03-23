@@ -437,13 +437,13 @@ const AgentsDashboard = () => {
                 <CardHeader className="pb-2">
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-12 w-12 border border-gray-200 dark:border-gray-800">
-                        <AvatarImage src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.id}`} alt={agent.name} />
+                      <Avatar className="h-12 w-12 border border-border rounded-lg overflow-hidden">
+                        <AvatarImage src={agent.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${agent.id}`} alt={agent.name} className="object-cover" />
                         <AvatarFallback><UserCircle2 className="h-6 w-6" /></AvatarFallback>
                       </Avatar>
-                      <div>
-                        <h3 className="font-medium text-foreground dark:text-white">{agent.name}</h3>
-                        <p className="text-xs text-muted-foreground dark:text-gray-400">{agent.phone || agent.type}</p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-fg">{agent.name}</h3>
+                        <p className="text-xs text-fgMuted line-clamp-1">{getAgentDocs(agent.id)?.soulSummary || agent.type}</p>
                       </div>
                     </div>
                     <DropdownMenu>
