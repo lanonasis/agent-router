@@ -40,13 +40,6 @@ import { AgentStats } from "@/components/AgentStats";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTheme } from "@/hooks/useTheme";
 
-const randomNames = ["Aria", "Mike", "Yuki", "Misty", "Nova", "Zephyr", "Echo", "Luna", "Orion", "Iris"];
-
-const getRandomName = (id: string) => {
-  const lastChar = id.charAt(id.length - 1);
-  const index = parseInt(lastChar, 36) % randomNames.length;
-  return randomNames[index];
-};
 
 const getAgentAVMScore = (id: string): number => {
   const charSum = id.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
