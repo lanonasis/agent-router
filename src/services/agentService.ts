@@ -1,5 +1,11 @@
 
 import { AgentType, AgentTypeCategory } from '@/types/agent';
+import coderAvatar from '@/assets/avatars/coder.png';
+import researcherAvatar from '@/assets/avatars/researcher.png';
+import reviewerAvatar from '@/assets/avatars/reviewer.png';
+import architectAvatar from '@/assets/avatars/architect.png';
+import testerAvatar from '@/assets/avatars/tester.png';
+import orchestratorAvatar from '@/assets/avatars/orchestrator.png';
 
 const mockAgents: AgentType[] = [
   {
@@ -13,7 +19,7 @@ const mockAgents: AgentType[] = [
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=coder",
+    avatar: coderAvatar,
     purpose: "Write, edit, and refactor production-grade code. Ship clean, tested output with explicit types, error handling, and tests. No TODOs left behind without tracking.",
     prompt: `You are the Coder Agent: a senior TypeScript/full-stack engineer responsible for writing, editing, and refactoring production-grade code.
 
