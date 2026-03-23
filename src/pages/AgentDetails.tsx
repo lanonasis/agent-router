@@ -570,7 +570,7 @@ const AgentDetails = () => {
             <div className="relative">
               <Avatar className="h-16 w-16 border-2 border-brandPurple/30 rounded-lg overflow-hidden">
                 <AvatarImage src={agent.avatar} alt={agent.name} className="object-cover" />
-                <AvatarFallback className="bg-agent-primary/20 text-agent-primary">
+                <AvatarFallback className="bg-brandPurple/20 text-brandPurple">
                   <Bot className="h-8 w-8" />
                 </AvatarFallback>
               </Avatar>
