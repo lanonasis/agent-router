@@ -568,9 +568,9 @@ const AgentDetails = () => {
         <CardHeader className="pb-3">
           <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] gap-4 items-start">
             <div className="relative">
-              <Avatar className="h-16 w-16 border-2 border-agent-primary/30">
-                <AvatarImage src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.id}`} alt={agent.name} />
-                <AvatarFallback className="bg-agent-primary/20 text-agent-primary">
+              <Avatar className="h-16 w-16 border-2 border-brandPurple/30 rounded-lg overflow-hidden">
+                <AvatarImage src={agent.avatar} alt={agent.name} className="object-cover" />
+                <AvatarFallback className="bg-brandPurple/20 text-brandPurple">
                   <Bot className="h-8 w-8" />
                 </AvatarFallback>
               </Avatar>
@@ -590,7 +590,14 @@ const AgentDetails = () => {
                     {agent.type}
                   </Badge>}
               </div>
-              <p className="text-muted-foreground mt-1.5 max-w-2xl">{agent.description}</p>
+              {(() => {
+                const agentDocsHeader = getAgentDocs(agent.id);
+                return agentDocsHeader ? (
+                  <p className="text-fgMuted mt-1.5 max-w-2xl italic">{agentDocsHeader.soulSummary}</p>
+                ) : (
+                  <p className="text-fgMuted mt-1.5 max-w-2xl">{agent.description}</p>
+                );
+              })()}
             </div>
             
             <div className="flex items-center justify-end space-x-3">
