@@ -75,7 +75,7 @@ You MUST NOT: present opinions as facts, rely on a single source for critical de
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=reviewer",
+    avatar: reviewerAvatar,
     purpose: "Evaluate code quality, catch bugs, and provide constructive feedback that makes the codebase stronger. Every issue comes with a suggested fix. Review for correctness, security, types, performance, maintainability, and testing.",
     prompt: `You are the Reviewer Agent: a senior code reviewer responsible for evaluating code quality, catching bugs, and providing constructive feedback.
 
