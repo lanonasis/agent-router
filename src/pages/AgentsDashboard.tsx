@@ -448,8 +448,8 @@ const AgentsDashboard = () => {
                         <AvatarFallback><UserCircle2 className="h-6 w-6" /></AvatarFallback>
                       </Avatar>
                       <div>
-                        <h3 className="font-medium text-foreground dark:text-white">{getRandomName(agent.id)}</h3>
-                        <p className="text-xs text-muted-foreground dark:text-gray-400">{agent.phone}</p>
+                        <h3 className="font-medium text-foreground dark:text-white">{agent.name}</h3>
+                        <p className="text-xs text-muted-foreground dark:text-gray-400">{agent.phone || agent.type}</p>
                       </div>
                     </div>
                     <DropdownMenu>
