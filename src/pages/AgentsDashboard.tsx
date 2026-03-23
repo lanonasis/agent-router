@@ -40,13 +40,6 @@ import { AgentStats } from "@/components/AgentStats";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTheme } from "@/hooks/useTheme";
 
-const randomNames = ["Aria", "Mike", "Yuki", "Misty", "Nova", "Zephyr", "Echo", "Luna", "Orion", "Iris"];
-
-const getRandomName = (id: string) => {
-  const lastChar = id.charAt(id.length - 1);
-  const index = parseInt(lastChar, 36) % randomNames.length;
-  return randomNames[index];
-};
 
 const getAgentAVMScore = (id: string): number => {
   const charSum = id.split('').reduce((sum, char) => sum + char.charCodeAt(0), 0);
@@ -448,8 +441,8 @@ const AgentsDashboard = () => {
                         <AvatarFallback><UserCircle2 className="h-6 w-6" /></AvatarFallback>
                       </Avatar>
                       <div>
-                        <h3 className="font-medium text-foreground dark:text-white">{getRandomName(agent.id)}</h3>
-                        <p className="text-xs text-muted-foreground dark:text-gray-400">{agent.phone}</p>
+                        <h3 className="font-medium text-foreground dark:text-white">{agent.name}</h3>
+                        <p className="text-xs text-muted-foreground dark:text-gray-400">{agent.phone || agent.type}</p>
                       </div>
                     </div>
                     <DropdownMenu>
