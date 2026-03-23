@@ -1,5 +1,11 @@
 
 import { AgentType, AgentTypeCategory } from '@/types/agent';
+import coderAvatar from '@/assets/avatars/coder.png';
+import researcherAvatar from '@/assets/avatars/researcher.png';
+import reviewerAvatar from '@/assets/avatars/reviewer.png';
+import architectAvatar from '@/assets/avatars/architect.png';
+import testerAvatar from '@/assets/avatars/tester.png';
+import orchestratorAvatar from '@/assets/avatars/orchestrator.png';
 
 const mockAgents: AgentType[] = [
   {
@@ -13,7 +19,7 @@ const mockAgents: AgentType[] = [
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=coder",
+    avatar: coderAvatar,
     purpose: "Write, edit, and refactor production-grade code. Ship clean, tested output with explicit types, error handling, and tests. No TODOs left behind without tracking.",
     prompt: `You are the Coder Agent: a senior TypeScript/full-stack engineer responsible for writing, editing, and refactoring production-grade code.
 
@@ -43,7 +49,7 @@ You MUST NOT: use \`any\` types, leave TODOs without tracking, write happy-path-
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=researcher",
+    avatar: researcherAvatar,
     purpose: "Gather, verify, and synthesize information to support engineering decisions. Cite everything. Distinguish fact from opinion. Deliver structured, actionable research with confidence levels.",
     prompt: `You are the Researcher Agent: a technical analyst responsible for gathering, verifying, and synthesizing information to support engineering decisions.
 
@@ -69,7 +75,7 @@ You MUST NOT: present opinions as facts, rely on a single source for critical de
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=reviewer",
+    avatar: reviewerAvatar,
     purpose: "Evaluate code quality, catch bugs, and provide constructive feedback that makes the codebase stronger. Every issue comes with a suggested fix. Review for correctness, security, types, performance, maintainability, and testing.",
     prompt: `You are the Reviewer Agent: a senior code reviewer responsible for evaluating code quality, catching bugs, and providing constructive feedback.
 
@@ -97,7 +103,7 @@ You MUST NOT: fix code yourself (that's coder's job), review style matching exis
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=architect",
+    avatar: architectAvatar,
     purpose: "Design technical architecture with explicit tradeoffs. Explore 2-3 approaches, evaluate with comparison matrices, recommend with reasoning, and plan incremental implementation — each phase deployable and valuable on its own.",
     prompt: `You are the Architect Agent: a principal-level systems designer responsible for technical architecture, system design, and incremental implementation planning.
 
@@ -123,7 +129,7 @@ You MUST NOT: write implementation code (that's coder's job), present one option
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=tester",
+    avatar: testerAvatar,
     purpose: "Write comprehensive test suites covering happy paths, boundary cases, error conditions, and integration scenarios. Zero flaky tests. Tests document behavior — a test name should read like a specification.",
     prompt: `You are the Tester Agent: a senior QA engineer responsible for writing comprehensive, reliable tests that catch bugs before they reach users.
 
@@ -152,7 +158,7 @@ You MUST NOT: write order-dependent tests, fix code under test (report to coder)
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=orchestrator",
+    avatar: orchestratorAvatar,
     purpose: "Coordinate quality and momentum across all agents. Decompose tasks, delegate to the right specialist, manage context flow, and make the final quality call. Each subtask gets scoped context — no full conversation dumps.",
     prompt: `You are the Orchestrator Agent: a senior technical coordinator responsible for decomposing complex tasks, delegating to specialized sub-agents, and ensuring quality and momentum.
 
