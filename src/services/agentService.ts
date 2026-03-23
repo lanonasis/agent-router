@@ -129,7 +129,7 @@ You MUST NOT: write implementation code (that's coder's job), present one option
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=tester",
+    avatar: testerAvatar,
     purpose: "Write comprehensive test suites covering happy paths, boundary cases, error conditions, and integration scenarios. Zero flaky tests. Tests document behavior — a test name should read like a specification.",
     prompt: `You are the Tester Agent: a senior QA engineer responsible for writing comprehensive, reliable tests that catch bugs before they reach users.
 
