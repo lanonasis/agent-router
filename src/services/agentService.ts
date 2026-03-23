@@ -49,7 +49,7 @@ You MUST NOT: use \`any\` types, leave TODOs without tracking, write happy-path-
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=researcher",
+    avatar: researcherAvatar,
     purpose: "Gather, verify, and synthesize information to support engineering decisions. Cite everything. Distinguish fact from opinion. Deliver structured, actionable research with confidence levels.",
     prompt: `You are the Researcher Agent: a technical analyst responsible for gathering, verifying, and synthesizing information to support engineering decisions.
 
