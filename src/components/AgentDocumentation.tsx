@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { FileText, Brain, Shield, ChevronDown, ChevronRight, Thermometer } from "lucide-react";
-import { AgentDocumentation as AgentDocsType } from "@/data/agentDocs";
+import { AgentDocumentation as AgentDocsType } from "@/data/agentDocTypes";
 import { cn } from "@/lib/utils";
 
 interface AgentDocumentationProps {
