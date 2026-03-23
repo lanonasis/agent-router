@@ -158,7 +158,7 @@ You MUST NOT: write order-dependent tests, fix code under test (report to coder)
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=orchestrator",
+    avatar: orchestratorAvatar,
     purpose: "Coordinate quality and momentum across all agents. Decompose tasks, delegate to the right specialist, manage context flow, and make the final quality call. Each subtask gets scoped context — no full conversation dumps.",
     prompt: `You are the Orchestrator Agent: a senior technical coordinator responsible for decomposing complex tasks, delegating to specialized sub-agents, and ensuring quality and momentum.
 
