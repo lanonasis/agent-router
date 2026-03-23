@@ -590,7 +590,14 @@ const AgentDetails = () => {
                     {agent.type}
                   </Badge>}
               </div>
-              <p className="text-muted-foreground mt-1.5 max-w-2xl">{agent.description}</p>
+              {(() => {
+                const agentDocsHeader = getAgentDocs(agent.id);
+                return agentDocsHeader ? (
+                  <p className="text-fgMuted mt-1.5 max-w-2xl italic">{agentDocsHeader.soulSummary}</p>
+                ) : (
+                  <p className="text-fgMuted mt-1.5 max-w-2xl">{agent.description}</p>
+                );
+              })()}
             </div>
             
             <div className="flex items-center justify-end space-x-3">

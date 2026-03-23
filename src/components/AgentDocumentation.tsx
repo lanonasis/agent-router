@@ -1,10 +1,10 @@
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { FileText, Brain, Shield, ChevronDown, ChevronRight, Thermometer } from "lucide-react";
+import { FileText, Brain, Shield, ChevronDown, ChevronRight, Thermometer, Settings2, Layers } from "lucide-react";
 import { AgentDocumentation as AgentDocsType } from "@/data/agentDocTypes";
 import { cn } from "@/lib/utils";
 
@@ -210,9 +210,11 @@ export function AgentDocumentationTab({ docs, agentName }: AgentDocumentationPro
             <div>
               <p className="text-sm font-medium text-fg mb-1">Soul Identity</p>
               <p className="text-sm text-fgMuted italic">{docs.soulSummary}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <Thermometer className="h-3.5 w-3.5 text-fgMuted" />
-                <span className="text-xs text-fgMuted">Temperature: {docs.temperature}</span>
+              <div className="flex items-center gap-4 mt-2">
+                <div className="flex items-center gap-1.5">
+                  <Thermometer className="h-3.5 w-3.5 text-fgMuted" />
+                  <span className="text-xs text-fgMuted">Temperature: {docs.temperature}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -231,19 +233,38 @@ export function AgentDocumentationTab({ docs, agentName }: AgentDocumentationPro
         </ScrollArea>
       </CollapsibleSection>
 
-      {/* Shared docs */}
-      {docs.sharedDocs.map((doc, index) => (
+      {/* Parameter Profile */}
+      {docs.parameterProfile && (
         <CollapsibleSection
-          key={index}
-          title={doc.title}
-          icon={index === 0 ? <Brain className="h-5 w-5" /> : <Shield className="h-5 w-5" />}
-          badge={index === 0 ? "Identity" : "Safety"}
+          title={docs.parameterProfile.title}
+          icon={<Settings2 className="h-5 w-5" />}
+          badge="Parameters"
         >
-          <ScrollArea className="max-h-[400px]">
-            <MarkdownBlock content={doc.content} />
-          </ScrollArea>
+          <MarkdownBlock content={docs.parameterProfile.content} />
         </CollapsibleSection>
-      ))}
+      )}
+
+      {/* Shared docs */}
+      {docs.sharedDocs.map((doc, index) => {
+        const icons = [
+          <Brain key="brain" className="h-5 w-5" />,
+          <Shield key="shield" className="h-5 w-5" />,
+          <Layers key="layers" className="h-5 w-5" />
+        ];
+        const badges = ["Identity", "Safety", "Architecture"];
+        return (
+          <CollapsibleSection
+            key={index}
+            title={doc.title}
+            icon={icons[index] || <FileText className="h-5 w-5" />}
+            badge={badges[index] || "Shared"}
+          >
+            <ScrollArea className="max-h-[400px]">
+              <MarkdownBlock content={doc.content} />
+            </ScrollArea>
+          </CollapsibleSection>
+        );
+      })}
     </div>
   );
 }

@@ -1,6 +1,18 @@
 
 export type AgentStatus = "active" | "inactive" | "draft";
+
+export type AgentRole = 
+  | "Orchestrator"
+  | "Coder"
+  | "Researcher"
+  | "Reviewer"
+  | "Architect"
+  | "Tester";
+
+// Legacy type kept for compatibility with filters/UI
 export type AgentTypeCategory = 
+  | "Orchestrator" 
+  | "Sub-Agent"
   | "Customer Service" 
   | "Sales & Marketing" 
   | "Technical Support" 
@@ -29,6 +41,7 @@ export interface AgentType {
   name: string;
   description: string;
   type: AgentTypeCategory;
+  role?: AgentRole;
   status: AgentStatus;
   createdAt: string;
   updatedAt?: string;
@@ -44,13 +57,14 @@ export interface AgentType {
   channels?: string[];
   channelConfigs?: Record<string, AgentChannelConfig>;
   isPersonal?: boolean;
-  phone?: string;
-  email?: string;
   avatar?: string;
   purpose?: string;
   prompt?: string;
+  sourceDoc?: string; // canonical doc file reference
   industry?: string;
   customIndustry?: string;
   botFunction?: string;
   customFunction?: string;
+  phone?: string;
+  email?: string;
 }
