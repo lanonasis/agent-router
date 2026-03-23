@@ -568,8 +568,8 @@ const AgentDetails = () => {
         <CardHeader className="pb-3">
           <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_auto] gap-4 items-start">
             <div className="relative">
-              <Avatar className="h-16 w-16 border-2 border-agent-primary/30">
-                <AvatarImage src={`https://api.dicebear.com/7.x/bottts/svg?seed=${agent.id}`} alt={agent.name} />
+              <Avatar className="h-16 w-16 border-2 border-brandPurple/30 rounded-lg overflow-hidden">
+                <AvatarImage src={agent.avatar} alt={agent.name} className="object-cover" />
                 <AvatarFallback className="bg-agent-primary/20 text-agent-primary">
                   <Bot className="h-8 w-8" />
                 </AvatarFallback>
