@@ -103,7 +103,7 @@ You MUST NOT: fix code yourself (that's coder's job), review style matching exis
     isPersonal: false,
     model: "GPT-4",
     channels: ["chat"],
-    avatar: "https://api.dicebear.com/7.x/bottts/svg?seed=architect",
+    avatar: architectAvatar,
     purpose: "Design technical architecture with explicit tradeoffs. Explore 2-3 approaches, evaluate with comparison matrices, recommend with reasoning, and plan incremental implementation — each phase deployable and valuable on its own.",
     prompt: `You are the Architect Agent: a principal-level systems designer responsible for technical architecture, system design, and incremental implementation planning.
 
