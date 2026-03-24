@@ -13,12 +13,42 @@ import { AgentToggle } from "@/components/AgentToggle";
 import { getAgentDocs } from "@/data/agentDocs";
 import { AgentDetailTabs } from "@/components/AgentDetailTabs";
 
+const INVALID_PARAMS = [":agentId", "undefined", "null", ""];
+
 const AgentDetails = () => {
   const { agentId } = useParams<{ agentId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { agent, isLoading, error } = useAgentDetails(agentId);
+
+  // Guard against literal route template params or missing IDs
+  const isInvalidParam = !agentId || INVALID_PARAMS.includes(agentId);
+
+  const { agent, isLoading, error } = useAgentDetails(
+    isInvalidParam ? undefined : agentId
+  );
   const [isActive, setIsActive] = useState(false);
+
+  // Redirect invalid params back to dashboard
+  if (isInvalidParam) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <div className="mb-8">
+          <Link to="/agents" className="flex items-center text-fgMuted hover:text-fg transition-colors">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Agents
+          </Link>
+        </div>
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Invalid Agent</AlertTitle>
+          <AlertDescription>
+            No valid agent ID was provided. Select an agent from the dashboard.
+          </AlertDescription>
+        </Alert>
+        <Button onClick={() => navigate("/agents")} className="mt-4">Return to Dashboard</Button>
+      </div>
+    );
+  }
 
   // Sync active state when agent loads
   if (agent && isActive !== (agent.status === "active")) {
