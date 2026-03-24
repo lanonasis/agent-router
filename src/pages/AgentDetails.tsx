@@ -32,6 +32,7 @@ import { Rocket } from "lucide-react";
 import { TestAgentSidebar } from "@/components/TestAgentSidebar";
 import { getAgentDocs } from "@/data/agentDocs";
 import { AgentDocumentationTab } from "@/components/AgentDocumentation";
+import { AgentDetailTabs } from "@/components/AgentDetailTabs";
 
 const SAMPLE_TEXT = "Hello, I'm an AI assistant and I'm here to help you with your questions.";
 
