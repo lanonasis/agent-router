@@ -60,11 +60,19 @@ export interface AgentType {
   avatar?: string;
   purpose?: string;
   prompt?: string;
-  sourceDoc?: string; // canonical doc file reference
+  sourceDoc?: string;
   industry?: string;
   customIndustry?: string;
   botFunction?: string;
   customFunction?: string;
   phone?: string;
   email?: string;
+
+  // Extended identity fields (doc-driven)
+  soulSummary?: string;
+  traits?: string[];
+  temperature?: number;
+  promptSource?: string;
+  behaviorNotes?: string[];
+  sharedDocs?: string[];
 }
