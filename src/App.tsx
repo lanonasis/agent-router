@@ -9,6 +9,7 @@ import AgentsLayout from "./layouts/AgentsLayout";
 import AgentsDashboard from "./pages/AgentsDashboard";
 import AgentDetails from "./pages/AgentDetails";
 import AgentCreate from "./pages/AgentCreate";
+import DocsBrowser from "./pages/DocsBrowser";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
