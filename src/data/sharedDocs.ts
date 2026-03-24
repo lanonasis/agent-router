@@ -238,94 +238,12 @@ Update SOUL.md once → all agents update. No need to edit 5 different system pr
 | **Orchestrator** | Coordinates quality and momentum. Calm, decisive. | 0.4 |`
 };
 
-export const toolRegistryDoc: AgentDocSection = {
-  title: "Tool Registry — Definitions & Schemas",
-  content: `> These tools are available to all agents. Each tool has an approval level, JSON schema for validation, and execution constraints.
-
-## Approval Levels
-
-| Level | Meaning | Agent Behavior |
-|-------|---------|----------------|
-| \`auto\` | No approval needed | Execute immediately |
-| \`notify\` | Execute, then inform user | Log the action |
-| \`approve\` | Wait for user approval | Present plan, pause |
-| \`critical\` | Requires explicit typed confirmation | Present risk assessment, wait |
-
-## Project Boundary Enforcement
-
-> **All file and shell operations are scoped to \`PROJECT_ROOT\` by default.**
-> Access outside \`PROJECT_ROOT\` is only allowed when a tool's \`boundary_override\` explicitly permits it; otherwise it is **blocked**.
-
-### Path Validation
-All paths are resolved to absolute via \`realpath\` before any operation. Symlinks are followed and re-validated. \`PROJECT_ROOT\` is set at session init and cannot be changed by tool calls.
-
-### Protected Paths (never writable)
-- \`.env\`, \`.env.*\` — secrets files (read-only)
-- \`.git/\` — git internals (read-only via git CLI)
-- \`node_modules/\` — managed by package manager only
-
-## File Operations
-
-### read_file
-Read the contents of a file. Approval: \`auto\`. Boundary: \`PROJECT_ROOT\`.
-
-### write_file
-Create a new file or overwrite an existing one. Approval: \`approve\`. Protected paths: \`.env\`, \`.git/**\`, \`node_modules/**\`. Write approval escalates if \`overwrite: true\` and the target exists.
-
-### edit_file
-Apply targeted edits to an existing file. Approval: \`approve\` (elevated from \`notify\` — edits are mutations).
-
-### list_directory
-List files and directories at a given path. Approval: \`auto\`.
-
-## Shell Operations
-
-### execute_command
-Run a shell command scoped to the project root. Approval: \`approve\`.
-
-**Allowlist tiers:**
-- \`auto\`: read-only commands (\`ls\`, \`cat\`, \`grep\`, \`git status\`, etc.)
-- \`notify\`: build/test commands (\`npm test\`, \`npm run build\`, \`git add/commit\`)
-- \`approve\`: install/git-push commands (\`npm install\`, \`git push/merge\`)
-- \`critical\`: destructive commands (\`git reset\`, \`npm publish\`, \`docker push\`)
-
-**Blocked patterns**: \`rm -rf\`, \`sudo\`, \`DROP DATABASE\`, \`shutdown\`, \`curl|sh\`, and other dangerous operations.
-
-**Validation pipeline**: blocked pattern check → allowlist match → chain/pipe analysis → working directory validation → output redirect check.
-
-## Search Operations
-
-### search_code
-Search for patterns across the codebase using regex. Approval: \`auto\`.
-
-### search_semantic
-Semantic search over project files using embeddings. Approval: \`auto\`.
-
-## Web Operations
-
-### web_search
-Search the web for information. Approval: \`auto\`.
-
-### web_fetch
-Fetch content from a URL. Approval: \`notify\`.
-
-## Memory Operations
-
-### memory_read
-Read from the agent's memory store (LanOnasis). Approval: \`auto\`. Supports semantic search with tag filtering.
-
-### memory_write
-Write to the agent's memory store. Approval: \`notify\`. Requires a \`continuity_key\` for idempotency.
-
-## Tool Execution Rules
-
-1. **One tool per iteration.** Never chain tool calls without analyzing results.
-2. **Validate before calling.** Check schema compliance before execution.
-3. **Handle failures gracefully.** Do not retry more than once automatically.
-4. **Respect approval levels.** Never bypass — the approval level defines the contract.
-5. **Blocked patterns are absolute.** No override, no exception, no workaround.`
-};
-
+/**
+ * REMOVED: toolRegistryDoc
+ * This mirrored content is now redundant — the docs browser uses
+ * build-imported raw markdown from docManifest.ts instead.
+ * Removed to reduce manual sync burden.
+ */
 export const sourceOfTruthDoc: AgentDocSection = {
   title: "SOURCE-OF-TRUTH.md — Unified Agent Template",
   content: `This file is the canonical, drop-in template. All derived files should be synced from the sections below.
