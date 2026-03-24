@@ -40,6 +40,9 @@ const App = () => (
               <Route path="create" element={<AgentCreate />} />
               <Route path=":agentId" element={<AgentDetails />} />
             </Route>
+            <Route path="/docs" element={<AgentsLayout />}>
+              <Route index element={<DocsBrowser />} />
+            </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
