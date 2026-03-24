@@ -3,27 +3,26 @@ import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
 import { AGENT_SOURCE_MAP, SHARED_DOC_FILES, AgentSourceEntry } from "@/lib/agentSourceMap";
 import { getAgentDocs } from "@/data/agentDocs";
-import { soulDoc, policiesDoc, identityLayerDoc, toolRegistryDoc, sourceOfTruthDoc } from "@/data/sharedDocs";
+import { getSharedDocRaw, getAgentDocRaw } from "@/data/docManifest";
 import { FileCode2, ExternalLink, Info, FileWarning } from "lucide-react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 
-/** Maps shared doc labels to their mirrored TS content */
-function getSharedDocContent(label: string) {
-  switch (label) {
-    case "Soul Identity": return soulDoc;
-    case "Policies & Safety": return policiesDoc;
-    case "Identity Layer": return identityLayerDoc;
-    case "Tool Registry": return toolRegistryDoc;
-    case "Source of Truth": return sourceOfTruthDoc;
-    default: return null;
-  }
-}
-
-function SourceTag({ type }: { type: "mirrored" | "derived" }) {
+/**
+ * Source trust tag.
+ * - "build-imported": raw markdown loaded via Vite ?raw at build time (highest trust)
+ * - "mirrored": manually copied into TS objects (legacy, lower trust)
+ * - "derived": computed or summarized metadata
+ */
+function SourceTag({ type }: { type: "build-imported" | "mirrored" | "derived" }) {
+  const labels: Record<string, string> = {
+    "build-imported": "Build-imported from source",
+    "mirrored": "Mirrored from source",
+    "derived": "Derived metadata",
+  };
   return (
     <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-border bg-bgMuted text-fgMuted">
       <Info className="h-2.5 w-2.5" />
-      {type === "mirrored" ? "Mirrored from source" : "Derived metadata"}
+      {labels[type]}
     </span>
   );
 }
@@ -35,7 +34,7 @@ function UnavailableState({ docFile }: { docFile?: string }) {
       <p className="font-medium text-fg">Document unavailable</p>
       <p className="mt-1 text-xs max-w-sm mx-auto">
         {docFile ? (
-          <>This document is expected at <code className="text-xs bg-bgMuted px-1.5 py-0.5 rounded border border-border">{docFile}</code> but its content has not been synced into the app data layer.</>
+          <>This document is expected at <code className="text-xs bg-bgMuted px-1.5 py-0.5 rounded border border-border">{docFile}</code> but its content could not be loaded.</>
         ) : (
           <>The selected document could not be resolved. It may have been removed or renamed.</>
         )}
@@ -47,7 +46,8 @@ function UnavailableState({ docFile }: { docFile?: string }) {
 
 function SharedDocView({ label }: { label: string }) {
   const docEntry = SHARED_DOC_FILES.find((d) => d.label === label);
-  const content = getSharedDocContent(label);
+  // Use build-imported raw content (preferred) with no manual mirror fallback needed
+  const rawEntry = getSharedDocRaw(label);
 
   if (!docEntry) {
     return <UnavailableState />;
@@ -62,7 +62,7 @@ function SharedDocView({ label }: { label: string }) {
             <FileCode2 className="h-3 w-3" />
             {docEntry.file}
           </span>
-          <SourceTag type={content ? "mirrored" : "derived"} />
+          <SourceTag type={rawEntry ? "build-imported" : "derived"} />
         </div>
       </div>
 
@@ -80,10 +80,9 @@ function SharedDocView({ label }: { label: string }) {
 
       <Separator />
 
-      {content ? (
+      {rawEntry ? (
         <div>
-          <h3 className="text-sm font-semibold text-fg mb-3">{content.title}</h3>
-          <MarkdownRenderer content={content.content} />
+          <MarkdownRenderer content={rawEntry.content} />
         </div>
       ) : (
         <UnavailableState docFile={docEntry.file} />
@@ -94,6 +93,8 @@ function SharedDocView({ label }: { label: string }) {
 
 function AgentDocView({ entry }: { entry: AgentSourceEntry }) {
   const docs = getAgentDocs(entry.agentId);
+  // Build-imported raw markdown — the full source file content
+  const rawEntry = getAgentDocRaw(entry.agentId);
 
   return (
     <div className="space-y-5">
@@ -112,7 +113,7 @@ function AgentDocView({ entry }: { entry: AgentSourceEntry }) {
             <FileCode2 className="h-3 w-3" />
             {entry.docFile}
           </span>
-          <SourceTag type={docs ? "mirrored" : "derived"} />
+          <SourceTag type={rawEntry ? "build-imported" : docs ? "mirrored" : "derived"} />
         </div>
       </div>
 
@@ -126,62 +127,71 @@ function AgentDocView({ entry }: { entry: AgentSourceEntry }) {
         </p>
       </div>
 
-      {docs ? (
-        <div className="space-y-6">
-          {/* Soul Summary */}
+      {/* Derived metadata from agentDocs (soul summary, temperature) */}
+      {docs && (
+        <div className="space-y-4">
           <div>
             <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-1">Soul Summary</h3>
-            <SourceTag type="mirrored" />
+            <SourceTag type="derived" />
             <p className="text-sm text-fg mt-2 italic leading-relaxed">{docs.soulSummary}</p>
           </div>
-
-          {/* Temperature */}
           {docs.temperature !== undefined && (
             <div>
               <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-1">Temperature</h3>
               <p className="text-sm text-fg font-mono">{docs.temperature}</p>
             </div>
           )}
+        </div>
+      )}
 
-          <Separator />
+      <Separator />
 
-          {/* RISEN Prompt */}
-          <div>
-            <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-3">RISEN Prompt</h3>
-            <SourceTag type="mirrored" />
-            <div className="mt-3">
-              <MarkdownRenderer content={docs.risenPrompt.content} />
-            </div>
+      {/* Full source document — build-imported raw markdown */}
+      {rawEntry ? (
+        <div>
+          <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-3">Full Source Document</h3>
+          <SourceTag type="build-imported" />
+          <div className="mt-3">
+            <MarkdownRenderer content={rawEntry.content} />
           </div>
-
-          {/* Parameter Profile */}
-          {docs.parameterProfile && (
-            <>
-              <Separator />
-              <div>
-                <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-3">Parameter Profile</h3>
-                <SourceTag type="mirrored" />
-                <div className="mt-3">
-                  <MarkdownRenderer content={docs.parameterProfile.content} />
-                </div>
-              </div>
-            </>
-          )}
-
-          <Separator />
-
-          {/* Link to agent detail */}
-          <Link
-            to={`/agents/${entry.agentId}`}
-            className="inline-flex items-center gap-1.5 text-sm text-brandPurple hover:underline"
-          >
-            View agent detail page
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
+        </div>
+      ) : docs ? (
+        /* Fallback to legacy mirrored RISEN prompt if raw import unavailable */
+        <div>
+          <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-3">RISEN Prompt</h3>
+          <SourceTag type="mirrored" />
+          <div className="mt-3">
+            <MarkdownRenderer content={docs.risenPrompt.content} />
+          </div>
         </div>
       ) : (
         <UnavailableState docFile={entry.docFile} />
       )}
+
+      {/* Parameter Profile (derived from agentDocs) */}
+      {docs?.parameterProfile && (
+        <>
+          <Separator />
+          <div>
+            <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-3">Parameter Profile</h3>
+            <SourceTag type="derived" />
+            <div className="mt-3">
+              <MarkdownRenderer content={docs.parameterProfile.content} />
+            </div>
+          </div>
+        </>
+      )}
+
+      <Separator />
+
+      {/* Link to agent detail */}
+      <Link
+        to={`/agents/${entry.agentId}`}
+        className="inline-flex items-center gap-1.5 text-sm text-brandPurple hover:underline"
+      >
+        View agent detail page
+        <ExternalLink className="h-3.5 w-3.5" />
+      </Link>
     </div>
   );
 }
@@ -218,6 +228,5 @@ export function DocContentPanel({ activeId }: DocContentPanelProps) {
     return <AgentDocView entry={entry} />;
   }
 
-  // Unknown ID format — graceful fallback
   return <UnavailableState />;
 }
