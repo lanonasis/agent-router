@@ -31,7 +31,7 @@ const DocsBrowser = () => {
           </Link>
           <h1 className="text-3xl font-bold text-fg tracking-tight">Documentation</h1>
           <p className="text-fgMuted mt-1 text-sm max-w-xl">
-            Canonical source files that define the agent architecture. Content is mirrored from <code className="text-xs bg-bgMuted px-1.5 py-0.5 rounded border border-border">docs/agent_model_files/</code> into the app's data layer.
+            Canonical source files that define the agent architecture. Content is build-imported from <code className="text-xs bg-bgMuted px-1.5 py-0.5 rounded border border-border">docs/agent_model_files/</code> at compile time via Vite raw imports — no manual sync needed.
           </p>
         </div>
         <ThemeToggle />
