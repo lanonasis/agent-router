@@ -1,11 +1,11 @@
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
 import { AGENT_SOURCE_MAP, SHARED_DOC_FILES, AgentSourceEntry } from "@/lib/agentSourceMap";
 import { getAgentDocs } from "@/data/agentDocs";
 import { soulDoc, policiesDoc, identityLayerDoc, toolRegistryDoc, sourceOfTruthDoc } from "@/data/sharedDocs";
-import { FileCode2, ExternalLink, Info } from "lucide-react";
+import { FileCode2, ExternalLink, Info, FileWarning } from "lucide-react";
+import { MarkdownRenderer } from "./MarkdownRenderer";
 
 /** Maps shared doc labels to their mirrored TS content */
 function getSharedDocContent(label: string) {
@@ -28,23 +28,42 @@ function SourceTag({ type }: { type: "mirrored" | "derived" }) {
   );
 }
 
+function UnavailableState({ docFile }: { docFile?: string }) {
+  return (
+    <div className="py-16 text-center text-fgMuted text-sm">
+      <FileWarning className="h-8 w-8 mx-auto mb-3 text-fgMuted/50" />
+      <p className="font-medium text-fg">Document unavailable</p>
+      <p className="mt-1 text-xs max-w-sm mx-auto">
+        {docFile ? (
+          <>This document is expected at <code className="text-xs bg-bgMuted px-1.5 py-0.5 rounded border border-border">{docFile}</code> but its content has not been synced into the app data layer.</>
+        ) : (
+          <>The selected document could not be resolved. It may have been removed or renamed.</>
+        )}
+      </p>
+      <SourceTag type="derived" />
+    </div>
+  );
+}
+
 function SharedDocView({ label }: { label: string }) {
   const docEntry = SHARED_DOC_FILES.find((d) => d.label === label);
   const content = getSharedDocContent(label);
+
+  if (!docEntry) {
+    return <UnavailableState />;
+  }
 
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-2xl font-bold text-fg tracking-tight">{label}</h2>
-        {docEntry && (
-          <div className="flex items-center gap-2 mt-1.5">
-            <span className="flex items-center gap-1 text-xs text-fgMuted">
-              <FileCode2 className="h-3 w-3" />
-              {docEntry.file}
-            </span>
-            <SourceTag type={content ? "mirrored" : "derived"} />
-          </div>
-        )}
+        <div className="flex items-center gap-2 mt-1.5">
+          <span className="flex items-center gap-1 text-xs text-fgMuted">
+            <FileCode2 className="h-3 w-3" />
+            {docEntry.file}
+          </span>
+          <SourceTag type={content ? "mirrored" : "derived"} />
+        </div>
       </div>
 
       <p className="text-sm text-fgMuted">
@@ -63,20 +82,11 @@ function SharedDocView({ label }: { label: string }) {
 
       {content ? (
         <div>
-          <h3 className="text-sm font-semibold text-fg mb-1">{content.title}</h3>
-          <SourceTag type="mirrored" />
-          <pre className="mt-3 text-sm text-fgMuted whitespace-pre-wrap font-sans leading-relaxed">
-            {content.content}
-          </pre>
+          <h3 className="text-sm font-semibold text-fg mb-3">{content.title}</h3>
+          <MarkdownRenderer content={content.content} />
         </div>
       ) : (
-        <div className="py-8 text-center text-fgMuted text-sm">
-          <p className="font-medium">Content not yet mirrored</p>
-          <p className="mt-1 text-xs">
-            This document exists at <code className="text-xs bg-bgMuted px-1.5 py-0.5 rounded border border-border">{docEntry?.file}</code> but has not been synced into the app's data layer yet.
-          </p>
-          <SourceTag type="derived" />
-        </div>
+        <UnavailableState docFile={docEntry.file} />
       )}
     </div>
   );
@@ -137,11 +147,11 @@ function AgentDocView({ entry }: { entry: AgentSourceEntry }) {
 
           {/* RISEN Prompt */}
           <div>
-            <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-1">RISEN Prompt</h3>
+            <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-3">RISEN Prompt</h3>
             <SourceTag type="mirrored" />
-            <pre className="mt-3 text-sm text-fgMuted whitespace-pre-wrap font-sans leading-relaxed">
-              {docs.risenPrompt.content}
-            </pre>
+            <div className="mt-3">
+              <MarkdownRenderer content={docs.risenPrompt.content} />
+            </div>
           </div>
 
           {/* Parameter Profile */}
@@ -149,11 +159,11 @@ function AgentDocView({ entry }: { entry: AgentSourceEntry }) {
             <>
               <Separator />
               <div>
-                <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-1">Parameter Profile</h3>
+                <h3 className="text-xs font-semibold text-fgMuted uppercase tracking-wider mb-3">Parameter Profile</h3>
                 <SourceTag type="mirrored" />
-                <pre className="mt-3 text-sm text-fgMuted whitespace-pre-wrap font-sans leading-relaxed">
-                  {docs.parameterProfile.content}
-                </pre>
+                <div className="mt-3">
+                  <MarkdownRenderer content={docs.parameterProfile.content} />
+                </div>
               </div>
             </>
           )}
@@ -170,12 +180,7 @@ function AgentDocView({ entry }: { entry: AgentSourceEntry }) {
           </Link>
         </div>
       ) : (
-        <div className="py-8 text-center text-fgMuted text-sm">
-          <p className="font-medium">Documentation not yet available</p>
-          <p className="mt-1 text-xs">
-            Source file: <code className="bg-bgMuted px-1.5 py-0.5 rounded border border-border">{entry.docFile}</code>
-          </p>
-        </div>
+        <UnavailableState docFile={entry.docFile} />
       )}
     </div>
   );
@@ -207,9 +212,12 @@ export function DocContentPanel({ activeId }: DocContentPanelProps) {
   if (activeId.startsWith("agent:")) {
     const agentId = activeId.replace("agent:", "");
     const entry = AGENT_SOURCE_MAP.find((e) => e.agentId === agentId);
-    if (!entry) return <p className="text-fgMuted text-sm">Agent not found.</p>;
+    if (!entry) {
+      return <UnavailableState />;
+    }
     return <AgentDocView entry={entry} />;
   }
 
-  return null;
+  // Unknown ID format — graceful fallback
+  return <UnavailableState />;
 }
