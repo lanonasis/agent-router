@@ -103,7 +103,15 @@ const AgentsDashboard = () => {
             Six specialized agents. One coordination layer. Doc-driven architecture.
           </p>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <Link to="/docs">
+            <Button variant="outline" size="sm" className="gap-1.5 text-fgMuted hover:text-fg">
+              <BookOpen className="h-4 w-4" />
+              Docs
+            </Button>
+          </Link>
+          <ThemeToggle />
+        </div>
       </div>
 
       <Separator />
