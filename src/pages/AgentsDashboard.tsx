@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getAgentDocs } from "@/data/agentDocs";
-import { Search, CircleSlash, Loader2, PlusCircle, Thermometer, Network, FileCode2 } from "lucide-react";
+import { Search, CircleSlash, Loader2, PlusCircle, Thermometer, Network, FileCode2, BookOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
