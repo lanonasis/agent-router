@@ -8,8 +8,8 @@ export const useAgentDetails = (agentId: string | undefined) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!agentId) {
-      setError("Agent ID is required");
+    if (!agentId || agentId === ":agentId") {
+      setError("No valid agent ID provided");
       setIsLoading(false);
       return;
     }
