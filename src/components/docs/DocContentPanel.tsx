@@ -4,7 +4,7 @@ import { Separator } from "@/components/ui/separator";
 import { Link } from "react-router-dom";
 import { AGENT_SOURCE_MAP, SHARED_DOC_FILES, AgentSourceEntry } from "@/lib/agentSourceMap";
 import { getAgentDocs } from "@/data/agentDocs";
-import { soulDoc, policiesDoc, identityLayerDoc } from "@/data/sharedDocs";
+import { soulDoc, policiesDoc, identityLayerDoc, toolRegistryDoc, sourceOfTruthDoc } from "@/data/sharedDocs";
 import { FileCode2, ExternalLink, Info } from "lucide-react";
 
 /** Maps shared doc labels to their mirrored TS content */
@@ -13,6 +13,8 @@ function getSharedDocContent(label: string) {
     case "Soul Identity": return soulDoc;
     case "Policies & Safety": return policiesDoc;
     case "Identity Layer": return identityLayerDoc;
+    case "Tool Registry": return toolRegistryDoc;
+    case "Source of Truth": return sourceOfTruthDoc;
     default: return null;
   }
 }
