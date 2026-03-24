@@ -364,19 +364,25 @@ const AgentsDashboard = () => {
                       <CardDescription className="line-clamp-2 text-fgMuted mb-2">
                         {agent.purpose || agent.description}
                       </CardDescription>
+                      {agent.traits && agent.traits.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {agent.traits.slice(0, 3).map((trait) => (
+                            <Badge key={trait} variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {trait}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </CardHeader>
                   
                   <CardContent className="pb-3">
                     <div className="flex items-center gap-4 text-xs text-fgMuted">
-                      {docs && (
+                      {agent.temperature !== undefined && (
                         <div className="flex items-center gap-1">
                           <Thermometer className="h-3 w-3" />
-                          <span>Temp: {docs.temperature}</span>
+                          <span>Temp: {agent.temperature}</span>
                         </div>
-                      )}
-                      {agent.interactions !== undefined && (
-                        <span>{agent.interactions.toLocaleString()} interactions</span>
                       )}
                       {agent.sourceDoc && (
                         <span className="text-brandPurple/60 truncate">{agent.sourceDoc.split('/').pop()}</span>
