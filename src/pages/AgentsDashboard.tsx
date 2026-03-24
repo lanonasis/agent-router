@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getAgentDocs } from "@/data/agentDocs";
-import { Search, CircleSlash, Loader2, PlusCircle, Thermometer, Network, FileCode2 } from "lucide-react";
+import { Search, CircleSlash, Loader2, PlusCircle, Thermometer, Network, FileCode2, BookOpen } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -102,7 +103,15 @@ const AgentsDashboard = () => {
             Six specialized agents. One coordination layer. Doc-driven architecture.
           </p>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <Link to="/docs">
+            <Button variant="outline" size="sm" className="gap-1.5 text-fgMuted hover:text-fg">
+              <BookOpen className="h-4 w-4" />
+              Docs
+            </Button>
+          </Link>
+          <ThemeToggle />
+        </div>
       </div>
 
       <Separator />
