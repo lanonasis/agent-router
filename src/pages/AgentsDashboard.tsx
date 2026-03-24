@@ -329,7 +329,7 @@ const AgentsDashboard = () => {
                             </Badge>
                           </div>
                           <p className="text-xs text-fgMuted line-clamp-1 mt-0.5">
-                            {docs?.soulSummary || agent.description}
+                            {agent.soulSummary || docs?.soulSummary || agent.description}
                           </p>
                         </div>
                       </div>
