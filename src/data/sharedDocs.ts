@@ -244,61 +244,9 @@ Update SOUL.md once → all agents update. No need to edit 5 different system pr
  * build-imported raw markdown from docManifest.ts instead.
  * Removed to reduce manual sync burden.
  */
-export const sourceOfTruthDoc: AgentDocSection = {
-  title: "SOURCE-OF-TRUTH.md — Unified Agent Template",
-  content: `This file is the canonical, drop-in template. All derived files should be synced from the sections below.
-
-## Sync Policy
-- **Canonical**: this file.
-- **Derived targets**: base.md, tools.md, researcher.md, generic.md, coder.md, tester.md, reviewer.md, architect.md, policies.md, SOUL.md, IDENTITY-LAYER.md.
-- If conflicts exist, this file wins.
-- When updating, change this file first, then re-export sections to their target files.
-
-## Contained Sections
-
-This document contains the full canonical content for every component of the agent system:
-
-### Shared Documents
-- **SOUL.md** — Core identity layer. Defines who every agent is: principles, communication style, risk posture, security boundaries.
-- **IDENTITY-LAYER.md** — Explains how the soul pattern works, the loading ritual, composability, and the file map.
-- **policies.md** — Safety & behavior policies. Execution safety, data safety, code safety, communication policies, memory governance, agent interaction policies.
-- **tools.md** — Tool registry with approval levels, JSON schemas, boundary enforcement, and execution rules.
-
-### Agent Prompts (RISEN format)
-- **base.md** — Orchestrator. Coordinates task decomposition, agent delegation, context passing, and quality integration.
-- **coder.md** — Senior TypeScript/full-stack engineer. Writes, edits, and refactors production-grade code.
-- **researcher.md** — Technical analyst. Gathers, verifies, and synthesizes information with citations.
-- **reviewer.md** — Senior code reviewer. Evaluates quality, catches bugs, provides constructive feedback with fixes.
-- **architect.md** — Principal-level systems designer. Technical architecture, system design, incremental planning.
-- **tester.md** — Senior QA engineer. Writes comprehensive, reliable, deterministic tests.
-
-### Framework Adapter
-- **generic.md** — Translates the agent architecture into framework-specific configurations (Ollama, Claude API, CrewAI). Includes parameter profiles and context window management.
-
-## Architecture Overview
-
-\`\`\`
-SOUL.md (Identity)         — Who am I?
-    ↓
-RISEN Prompt (Behavior)    — What do I do?
-    ↓
-Agent Loop (Execution)     — How do I do it?
-    ↓
-Tool Registry (Capability) — What can I use?
-    ↓
-Policies (Safety)          — What can't I do?
-\`\`\`
-
-Every agent loads these layers in order. The Soul is loaded silently. The RISEN prompt defines specialization. Tools define capability. Policies define boundaries.
-
-## Agent Quick Reference
-
-| Agent | Soul Summary | Temperature |
-|-------|-------------|-------------|
-| **Orchestrator** | Coordinates quality and momentum. Calm, decisive. | 0.4 |
-| **Coder** | Ships clean, tested code. Precise with types. | 0.2 |
-| **Researcher** | Finds signal in noise. Cites everything. | 0.5 |
-| **Reviewer** | Constructive critic. Always provides fixes. | 0.3 |
-| **Architect** | Thinks in systems. Makes tradeoffs visible. | 0.6 |
-| **Tester** | Breaks things so users don't. Zero flaky tests. | 0.2 |`
-};
+/**
+ * REMOVED: sourceOfTruthDoc
+ * This mirrored content is now redundant — the docs browser uses
+ * build-imported raw markdown from docManifest.ts instead.
+ * Removed to reduce manual sync burden.
+ */
