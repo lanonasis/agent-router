@@ -9,6 +9,7 @@ import AgentsLayout from "./layouts/AgentsLayout";
 import AgentsDashboard from "./pages/AgentsDashboard";
 import AgentDetails from "./pages/AgentDetails";
 import AgentCreate from "./pages/AgentCreate";
+import DocsBrowser from "./pages/DocsBrowser";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -38,6 +39,9 @@ const App = () => (
               <Route index element={<AgentsDashboard />} />
               <Route path="create" element={<AgentCreate />} />
               <Route path=":agentId" element={<AgentDetails />} />
+            </Route>
+            <Route path="/docs" element={<AgentsLayout />}>
+              <Route index element={<DocsBrowser />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
