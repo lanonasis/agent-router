@@ -120,46 +120,48 @@ const AgentDetails = () => {
       {/* Header card */}
       <Card className={`mb-8 ${isOrch ? "border-brandPurple/20" : ""}`}>
         <CardHeader className="pb-0">
-          <div className="flex items-start gap-4">
-            {/* Avatar */}
-            <Avatar className={`h-14 w-14 rounded-lg border-2 shrink-0 ${isOrch ? "border-brandPurple/40" : "border-border"}`}>
-              <AvatarImage src={agent.avatar} alt={agent.name} className="object-cover" />
-              <AvatarFallback className="rounded-lg bg-bgMuted text-fg font-semibold">
-                {agent.name.slice(0, 2).toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+            <div className="flex items-start gap-4 flex-1 min-w-0">
+              {/* Avatar */}
+              <Avatar className={`h-12 w-12 sm:h-14 sm:w-14 rounded-lg border-2 shrink-0 ${isOrch ? "border-brandPurple/40" : "border-border"}`}>
+                <AvatarImage src={agent.avatar} alt={agent.name} className="object-cover" />
+                <AvatarFallback className="rounded-lg bg-bgMuted text-fg font-semibold">
+                  {agent.name.slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
 
-            {/* Identity */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h1 className="text-2xl font-bold text-fg">{agent.name}</h1>
-                <Badge
-                  variant="outline"
-                  className={`text-[11px] ${
-                    isOrch
-                      ? "border-brandPurple/40 text-brandPurple bg-brandPurple/5"
-                      : "border-border text-fgMuted"
-                  }`}
-                >
-                  {isOrch && <Network className="h-3 w-3 mr-1" />}
-                  {isOrch ? "Orchestrator" : agent.role || agent.type}
-                </Badge>
-                {isActive ? (
-                  <span className="flex items-center gap-1.5 text-[11px] text-success">
-                    <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse-light" />
-                    Active
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-fgMuted">Inactive</span>
-                )}
+              {/* Identity */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-bold text-fg">{agent.name}</h1>
+                  <Badge
+                    variant="outline"
+                    className={`text-[11px] ${
+                      isOrch
+                        ? "border-brandPurple/40 text-brandPurple bg-brandPurple/5"
+                        : "border-border text-fgMuted"
+                    }`}
+                  >
+                    {isOrch && <Network className="h-3 w-3 mr-1" />}
+                    {isOrch ? "Orchestrator" : agent.role || agent.type}
+                  </Badge>
+                  {isActive ? (
+                    <span className="flex items-center gap-1.5 text-[11px] text-success">
+                      <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse-light" />
+                      Active
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-fgMuted">Inactive</span>
+                  )}
+                </div>
+                <p className="text-sm text-fgMuted mt-1.5 max-w-2xl leading-relaxed italic line-clamp-3 sm:line-clamp-none">
+                  {soul}
+                </p>
               </div>
-              <p className="text-sm text-fgMuted mt-1.5 max-w-2xl leading-relaxed italic">
-                {soul}
-              </p>
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-2 shrink-0 self-start">
               <AgentToggle isActive={isActive} onToggle={handleStatusToggle} />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
