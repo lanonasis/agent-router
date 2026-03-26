@@ -1,0 +1,28 @@
+[Unit]
+Description=Onasis AI Service Router (Ollama + Memory)
+Documentation=https://docs.lanonasis.com
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lanonasis/shared_services/onasis_ai_router
+Environment="NODE_ENV=production"
+ExecStart=/usr/bin/dotenvx run --ops-off -f /opt/lanonasis/shared_services/onasis_ai_router/.env.production -- /usr/bin/node /opt/lanonasis/shared_services/onasis_ai_router/server.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=onasis-ai-router
+
+# Resource limits (adjust based on your needs)
+MemoryMax=2G
+CPUQuota=200%
+
+# Security hardening (optional - uncomment if needed)
+# NoNewPrivileges=true
+# PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

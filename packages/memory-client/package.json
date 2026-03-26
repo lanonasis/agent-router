@@ -1,0 +1,10 @@
+{
+  "name": "@onasis/memory-client",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared lanonasis memory API client helpers",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

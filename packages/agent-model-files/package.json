@@ -1,0 +1,7 @@
+{
+  "name": "@onasis/agent-model-files",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Canonical agent model files (SOUL, policies, role prompts) — single source of truth for UI and runtime",
+  "files": ["*.md", "*.py"]
+}

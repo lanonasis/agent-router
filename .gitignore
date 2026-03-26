@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local IDE/agent settings (per-machine, not shared)
+.claude/settings.local.json
+.cursor/settings.local.json
+.windsurf/settings.local.json
+
+# Service secrets (loaded by systemd from /etc/onasis-ai-router/)
+services/onasis-ai-router/.env.keys
+services/onasis-ai-router/.env.production
+
+# Router logs (runtime artefacts)
+services/onasis-ai-router/logs/

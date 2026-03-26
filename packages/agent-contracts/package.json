@@ -1,0 +1,11 @@
+{
+  "name": "@onasis/agent-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared TypeScript types, schemas, and source-map for the Onasis agent system",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
