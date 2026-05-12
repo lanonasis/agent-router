@@ -143,18 +143,6 @@ Large tool responses are automatically summarized using `qwen2:1.5b` to keep con
 | Memory prefetch | (none - direct API) | Efficient |
 | General chat | qwen2.5-coder:3b | Primary model |
 
-## 💻 System Requirements
-
-### Minimum (what you need)
-- ✅ 8GB RAM
-- ✅ 10GB disk space
-- ✅ Linux/macOS/Windows with WSL
-
-### What you'll use
-- ~3GB disk for models
-- ~4GB RAM when running
-- ~97GB disk remaining (plenty!)
-
 ## 🛠️ Troubleshooting
 
 ### Model not found
