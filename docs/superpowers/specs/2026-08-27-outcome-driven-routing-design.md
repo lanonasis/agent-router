@@ -368,7 +368,7 @@ One architecture, ordered, each phase independently deployable and revertable.
 
 Phase 2 removes the symptom. Phases 1 and 3–5 stop it recurring.
 
-### Rollback
+### Rollback — REPO is the git root; see the plan Global Constraints for its per-host value
 
 Each phase is a separate commit on `refactor/outcome-driven-routing`. The
 service is deployed via systemd from the working tree, so rollback is
@@ -376,7 +376,7 @@ service is deployed via systemd from the working tree, so rollback is
 
 ```bash
 export $(grep DOTENV_PRIVATE_KEY_PRODUCTION \
-  /opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router/.env.keys | xargs)
+  "$REPO"/services/onasis-ai-router/.env.keys | xargs)
 systemctl restart onasis-ai-router
 ```
 

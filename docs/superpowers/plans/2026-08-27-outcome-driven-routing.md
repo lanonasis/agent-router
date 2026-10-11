@@ -1,6 +1,38 @@
 # Outcome-Driven Routing Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> ## Status: COMPLETE (Phases 1–3) — as-built runbook
+>
+> **Last verified: 2026-10-11.** All twelve tasks landed on 2026-08-27. This
+> document is **not open work** — it is the reference for what was built, why each
+> decision was made, and how to verify it still holds. If you have been handed
+> this to *implement*, check "As-built record" first: most of it is done.
+>
+> **Two things to know before you touch this code:**
+>
+> 1. **The structure has eroded.** `core/ai-service-router.js` was 688 lines when
+>    this plan completed; it is **1638 lines** as of 2026-10-07. The modules below
+>    still exist and are still used, but new logic has been accreting back into
+>    the router. See "Standing invariants" — this is the failure mode this plan
+>    existed to prevent.
+> 2. **Every path in this document was hardcoded to one host.** Command blocks now
+>    use `$REPO`, because `/opt/lanonasis/shared_services/...` does not exist on
+>    this host — a `cd` into it fails silently and everything after runs in the
+>    wrong directory. See "Known path drift" at the end for the other files that
+>    still carry it.
+>
+> Every task below is retained verbatim as the record of *how* each piece was
+> built, including the reasoning that is not recoverable from the code.
+
+## Read this first — which document answers what
+
+| You need… | Read |
+|---|---|
+| Why this exists; the four defects; the measured evidence | `docs/superpowers/specs/2026-08-27-outcome-driven-routing-design.md` |
+| What to change, step by step; the reasoning behind each step | **this file** |
+| What is broken, what is fixed, what is still open | `docs/superpowers/specs/2026-08-27-open-findings-tracker.md` |
+| Streaming, caller identity, the three things called "persona" | `docs/superpowers/specs/2026-08-27-streaming-and-identity-notes.md` |
+| How the router behaves as a *service* (routes, vendors, ops) | `services/onasis-ai-router/CLAUDE.md` |
+
 
 **Goal:** Make `onasis-ai-router` dispatch on observed vendor outcomes instead of on declared config, so a vendor returning an error string inside an HTTP 200 no longer short-circuits the fallback chain.
 
@@ -14,7 +46,32 @@
 
 ## Global Constraints
 
-- **Working directory:** `/opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router`. Git root is `/opt/lanonasis/shared_services/onasis-agent-haven`. All `git` commands run from the git root; all `npm` commands from the service directory.
+- **Working directory — set `$REPO` once, use it everywhere.** Every command block
+  below is written as `cd "$REPO"`, because this path is **host-dependent** and
+  hardcoding one host's layout is what made the original version unusable:
+
+  ```bash
+  # Development / archive host (this machine). Git root:
+  export REPO=/opt/lanonasis/secondary-service/onasis-agent-haven
+  # Production host — the layout this document was originally written against:
+  #   export REPO=/opt/lanonasis/shared_services/onasis-agent-haven
+  ```
+
+  Service directory is `$REPO/services/onasis-ai-router`. All `git` commands run
+  from the git root; all `npm` commands from the service directory.
+
+  > **Corrected 2026-10-11.** The original text hardcoded
+  > `/opt/lanonasis/shared_services/onasis-agent-haven`. That tree **does not exist
+  > on this host at all** (the service is not deployed here), so an agent following
+  > it verbatim would `cd` into nothing — the failure is silent and every subsequent
+  > command then runs in the wrong directory. It is not "stale" so much as
+  > **host-specific**: it may well still be correct on the production host. Hence a
+  > variable rather than a second hardcoded path. The same defect appears in
+  > `README.md`, `services/onasis-ai-router/README.md`,
+  > `services/onasis-ai-router/docs/VENDOR-CONFIGURATION.md`, `CLAUDE.md`, and
+  > `infra/pm2/onasis-ai-router.ecosystem.js` — see "Known path drift" at the end.
+  > The sibling `shared_services/onasis_ai_router/` directory that `CLAUDE.md`
+  > tracked as open item 4 has since been removed; that open item is resolved.
 - **Branch:** `refactor/outcome-driven-routing` (already created, spec committed as `0e22554`).
 - **Node ≥22.19.0**, CommonJS (`require`/`module.exports`) — this service is not ESM.
 - **No new runtime dependencies.** Existing in-memory patterns (Map-based caches, breaker state) are the precedent.
@@ -25,9 +82,13 @@
 - **Deploy/restart after any phase lands:**
   ```bash
   export $(grep DOTENV_PRIVATE_KEY_PRODUCTION \
-    /opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router/.env.keys | xargs)
+    /opt/lanonasis/secondary-service/onasis-agent-haven/services/onasis-ai-router/.env.keys | xargs)
   systemctl restart onasis-ai-router
   ```
+  Confirm it came back before walking away:
+  `systemctl is-active onasis-ai-router && command curl -s http://127.0.0.1:8000/health`
+  (use `command curl`, not bare `curl` — a shell wrapper on this host rewrites plain
+  `curl` output into a schema stub instead of running the request).
 
 ---
 
@@ -217,7 +278,7 @@ Expected: PASS. The pre-existing `test-vendor-responsiveness.js` assertions must
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/vendor-scoreboard.js \
         services/onasis-ai-router/test/vendor-scoreboard.test.js \
         services/onasis-ai-router/core/ai-service-router.js \
@@ -298,7 +359,7 @@ Expected: `200`, and no `Memory prefetch failed` beyond what was present before 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/memory-prefetch.js \
         services/onasis-ai-router/core/ai-service-router.js
 git commit -m "onasis-ai-router: extract memory prefetch to core/memory-prefetch.js
@@ -366,7 +427,7 @@ Expected: `401` (the pre-change behaviour). A `500` means `this` was captured in
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/middleware.js \
         services/onasis-ai-router/core/ai-service-router.js
 git commit -m "onasis-ai-router: extract auth + usage middleware to core/middleware.js
@@ -431,7 +492,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/tool-loop.js services/onasis-ai-router/core/tools \
         services/onasis-ai-router/core/ai-service-router.js
 git commit -m "onasis-ai-router: extract tool execution to core/tool-loop.js
@@ -509,7 +570,7 @@ Expected: `active`, `200`, and all five vendor ids listed. Behaviour must be ide
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/chain-executor.js \
         services/onasis-ai-router/core/ai-service-router.js
 git commit -m "onasis-ai-router: extract vendor chain walk to core/chain-executor.js
@@ -691,7 +752,7 @@ Expected: PASS, 7/7.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/vendors/_shared/response-contract.js \
         services/onasis-ai-router/test/response-contract.test.js
 git commit -m "onasis-ai-router: add vendor response contract
@@ -769,7 +830,7 @@ Expected: PASS. `test-vendor-responsiveness.js` asserts every active vendor expo
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/vendors
 git add services/onasis-ai-router/core/chain-executor.js
 git commit -m "onasis-ai-router: enforce the response contract in every active adapter
@@ -879,8 +940,8 @@ Phase 2's whole purpose is that a user never sees the apology. Run the real chai
 
 ```bash
 cat > /tmp/verify-phase2.js <<'EOF'
-const { ChainExecutor } = require('/opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router/core/chain-executor');
-const { VendorScoreboard } = require('/opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router/core/vendor-scoreboard');
+const { ChainExecutor } = require(`${process.env.REPO || '/opt/lanonasis/secondary-service/onasis-agent-haven'}/services/onasis-ai-router/core/chain-executor`);
+const { VendorScoreboard } = require(`${process.env.REPO || '/opt/lanonasis/secondary-service/onasis-agent-haven'}/services/onasis-ai-router/core/vendor-scoreboard');
 const ex = new ChainExecutor({ scoreboard: new VendorScoreboard(), logger: console });
 (async () => {
   for (let i = 0; i < 12; i++) {
@@ -907,7 +968,7 @@ Expected: **zero `LEAKED` rows.** Rows may show `via=openclaw` (it usually succe
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/test/chain-executor.test.js
 git commit -m "onasis-ai-router: acceptance test for chain fall-through
 
@@ -1025,7 +1086,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/vendor-scoreboard.js \
         services/onasis-ai-router/test/vendor-scoreboard.test.js
 git commit -m "onasis-ai-router: classify vendor failures by cause
@@ -1167,7 +1228,7 @@ Expected: PASS, including Task 1's original three tests (which call `recordFailu
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/vendor-scoreboard.js \
         services/onasis-ai-router/test/vendor-scoreboard.test.js
 git commit -m "onasis-ai-router: proportionate cooldowns per failure class
@@ -1316,7 +1377,7 @@ Expected: PASS, all tests including Tasks 1, 9 and 10.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/vendor-scoreboard.js \
         services/onasis-ai-router/test/vendor-scoreboard.test.js
 git commit -m "onasis-ai-router: demote vendors on observed p95 tail latency
@@ -1440,7 +1501,7 @@ Note `/health` still reports liveness rather than capability — that is Phase 4
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven
+cd "$REPO"
 git add services/onasis-ai-router/core/chain-executor.js \
         services/onasis-ai-router/test/chain-executor.test.js
 git commit -m "onasis-ai-router: dispatch from the scoreboard
@@ -1474,3 +1535,127 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - [x] Service `active`, `/health` 200, unauthenticated POST still 401
 
 **Not** in scope, tracked for the follow-on plan: capability-based `/health` (spec §6), lane typing and the agent token floor (spec §7), and the L0 vendor (spec §10).
+
+---
+
+## As-built record (2026-10-11)
+
+Where the delivered code diverged from what this plan specified. Read this before
+treating any number or claim above as current.
+
+| Item | Plan said | As built | Note |
+|---|---|---|---|
+| `core/ai-service-router.js` | ~200–300, then recorded **688** | **1638** | **Eroded.** See below. |
+| `core/tool-loop.js` | split into `core/tools/*` if >400 lines | **938 lines, kept whole** | Boundary rule fired; deliberately not applied — splitting is not a pure move |
+| Response-formatting family | assigned a home | **stayed in the router** | The plan never gave it one (~125 lines) |
+| Tool follow-up pass | implied to move with `chain-executor` | **stayed in the router** | Not a pure move; carries the id-zipping contract from `5eed764` |
+| `core/chain-executor.js` | new module | **271 lines, extracted** | Landed as specified |
+| `core/vendor-scoreboard.js` | new module | **215 lines** | Landed as specified |
+| `core/memory-prefetch.js` | new module | **176 lines** | Landed as specified |
+| `core/middleware.js` | new module | **230 lines** | Landed as specified |
+| `vendors/_shared/response-contract.js` | new module | **101 lines** | Landed as specified |
+
+**Verification scripts referenced by the Done criteria — all present:**
+
+| Script | Proves |
+|---|---|
+| `scripts/verify-fallthrough.js` | The chain falls through instead of serving an error string (forces the case; 0/4 leaked, served by `minimax`) |
+| `scripts/verify-circuit-eject.js` | `openai`/`anthropic` self-eject after one billing failure (run 1 28778ms → run 2 1276ms) |
+| `scripts/capture-prompt-baseline.js` | Prompt composition is unchanged (SOUL + role across 54 combinations) |
+| `scripts/router-logs.js` | Classified failure summary; exit code backs an alert |
+
+### The erosion — and why it matters more than any task above
+
+`core/ai-service-router.js` line count over its life:
+
+```
+  1726   before this plan
+   688   at plan completion            (109b525, 2026-08-27)
+   821 → 999 → 1206 → … → 1638        (2026-09-03 → 2026-10-07)
+```
+
+Roughly **+950 lines in six weeks**, monotonically, after the extraction completed.
+This was **not** a revert: every module above still exists and is still used. The
+router regrew by accretion — new feature work landed in it rather than in a module.
+
+That is precisely the defect this plan was written to fix, returning by a different
+door. The phase-1 extraction bought a smaller file, not a smaller-file *habit*, and
+nothing has been holding the line since. Two consequences worth stating plainly:
+
+- The "~200-line router" mental model in this document and in the spec is **wrong
+  today**. Budget your reading accordingly.
+- Any new work in this area should be judged on *where the logic lands*, not only on
+  whether it works. A correct feature added inline makes the next change harder.
+
+## Standing invariants — do not regress these
+
+1. **Privacy:** vendor ids, model names, endpoints and API keys never appear in a
+   client response or an info-level log. `sanitizeVendorResponse()` is the enforcement
+   point.
+2. **The tool-call id-zipping contract** (`5eed764`) — the follow-up pass must replay
+   a vendor's own `tool_calls[]` verbatim, and tool results must be zipped to it by
+   index. Breaking this 400s on MiniMax and silently corrupts others.
+3. **Never race vendors in parallel** (`chain-executor.js`): it would bill every paid
+   vendor per fallback request for duplicate work.
+4. **`supabase-edge` stays deprecated.** It inverted the architecture into a cycle
+   with a consuming product and caused a persona leak. See `CLAUDE.md`.
+5. **Tests must be deterministic and free** — fakes, never live vendors. Live probes
+   belong in `scripts/`.
+6. **Structure discipline (added 2026-10-11):** new logic goes into a module. If it
+   must go into `core/ai-service-router.js`, say why in the commit message. The
+   erosion above is the reason this rule exists.
+7. **Never run `git checkout`/`reset` on `/opt/paperclip-runtime`** — unrelated
+   service on this host with an uncommitted hotfix.
+
+## Rollback
+
+Each phase is a separate commit on `refactor/outcome-driven-routing`. The service
+deploys from the working tree via systemd, so rollback is `git revert <phase>` then:
+
+```bash
+export $(grep DOTENV_PRIVATE_KEY_PRODUCTION \
+  /opt/lanonasis/secondary-service/onasis-agent-haven/services/onasis-ai-router/.env.keys | xargs)
+systemctl restart onasis-ai-router
+systemctl is-active onasis-ai-router
+```
+
+Note: this plan landed on `main` long ago, so "rollback" is per-commit revert rather
+than reverting a whole branch. Phases 1–3 are entangled with six weeks of later work
+in the same file — reverting a phase today will conflict.
+
+## Cross-references
+
+- Design spec, phasing table and open configuration defaults:
+  `docs/superpowers/specs/2026-08-27-outcome-driven-routing-design.md` §12, §13.
+- Service behaviour, vendor roster, ops runbook: `services/onasis-ai-router/CLAUDE.md`.
+- Consumer-facing HTTP contract: `services/onasis-ai-router/docs/INTEGRATION-GUIDE.md`.
+- Convergence/profiles plan: `docs/L0-AGENT-HEAVEN-CONVERGENCE-PLAN.md`.
+
+## Known path drift (2026-10-11)
+
+`/opt/lanonasis/shared_services/...` is the **production host** layout. That tree
+does not exist on this development/archive host, where the repo lives at
+`/opt/lanonasis/secondary-service/onasis-agent-haven`. Every command block in this
+document now uses `$REPO` — set it once (see Global Constraints) before running
+anything.
+
+These files still hardcode the production path, and on this host that is a silent
+failure: the command or service starts in the wrong directory, or does not start.
+
+| File | Where | Impact |
+|---|---|---|
+| `infra/pm2/onasis-ai-router.ecosystem.js` | line 11 | **Operational** — `cwd` points at a directory that does not exist here; pm2 cannot start the app from it |
+| `README.md` | line 57 | Onboarding `cd` into a missing path |
+| `services/onasis-ai-router/README.md` | line 90 | Same |
+| `services/onasis-ai-router/docs/VENDOR-CONFIGURATION.md` | line 14 | Deploy command reading a `.env.keys` that is not there |
+| `services/onasis-ai-router/CLAUDE.md` | lines 21, 26 | Declares the live path, and still describes the removed `shared_services/onasis_ai_router/` directory as present |
+
+**Left unchanged deliberately.** Each needs one of two decisions, and neither is a
+documentation call: either the path is host-specific and should be parameterised
+(as this plan now does), or one of them is simply wrong and should be deleted.
+`CLAUDE.md` is the service's primary orientation document — it should be corrected
+by whoever owns the production layout, not mechanically.
+
+**Why this matters more than it looks:** a wrong `cd` does not error. The command
+runs, in the wrong directory, and the failure surfaces later as a confusing
+"file not found" or a change that appears to have had no effect.
