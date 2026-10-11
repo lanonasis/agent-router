@@ -75,6 +75,11 @@ def main() -> int:
         help="Print planned writes without modifying files",
     )
     parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Fail when a derived file is missing or differs from its source section",
+    )
+    parser.add_argument(
         "--list",
         action="store_true",
         help="List detected sections and exit",
@@ -97,12 +102,20 @@ def main() -> int:
             print(name)
         return 0
 
+    if args.dry_run and args.check:
+        parser.error("--dry-run and --check are mutually exclusive")
+
     if not sections:
         print("No sections found.", file=sys.stderr)
         return 2
 
+    stale_targets: list[Path] = []
     for name, content in sections.items():
         target_path = output_dir / name
+        if args.check:
+            if not target_path.exists() or target_path.read_text(encoding="utf-8") != content:
+                stale_targets.append(target_path)
+            continue
         if args.dry_run:
             print(f"[DRY RUN] Would write {target_path}")
             continue
@@ -110,6 +123,14 @@ def main() -> int:
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_text(content, encoding="utf-8")
         print(f"Wrote {target_path}")
+
+    if args.check:
+        if stale_targets:
+            for target_path in stale_targets:
+                print(f"STALE: {target_path}", file=sys.stderr)
+            print("Run sync-source-of-truth.py to regenerate derived files.", file=sys.stderr)
+            return 1
+        print(f"All {len(sections)} derived files are current in {output_dir}")
 
     return 0
 

@@ -15,9 +15,29 @@
  *  - This adapter is the END of the fallback chain; it must not throw silently
  */
 
-const SUPABASE_URL      = process.env.SUPABASE_URL            || 'https://mxtsdgkwzjzlttpotole.supabase.co';
+const { fetchWithRetry, healthCheckTimeoutMs } = require('../_shared/http-client');
+
+// Correction (2026-08-18, superseding an earlier same-day fix): this
+// project (mxtsdgkwzjzlttpotole, "the-fixer-initiative" — the platform main
+// DB, per onasis-core/CLAUDE.md) IS the correct target, confirmed via the
+// Supabase Management API against the real deployed function source. Two
+// different "ai-chat"-ish functions exist across the org and neither is
+// what should be called here:
+//   - mxtsdgkwzjzlttpotole's OWN `ai-chat` function requires a genuine
+//     Supabase Auth user session JWT (calls /auth/v1/user and rejects
+//     anon/service-role keys with "missing sub claim") — not usable from a
+//     service-to-service backend without provisioning a dedicated logged-in
+//     service user, which is out of scope here.
+//   - ptnrwrgzrsbocgxlpvhd's `ai-chat` (auth-gateway's own project) DOES
+//     accept an anon key, but is a different, unrelated project.
+// The correct target is mxtsdgkwzjzlttpotole's `ai-router` function
+// ("Multi-provider AI router") — verified live: accepts the plain anon key,
+// accepts {messages: [...]} directly (no payload translation needed),
+// responds in ~1.4-2.5s via Lovable AI Gateway (Gemini 2.5 Flash), and its
+// {"response": "..."} field already matches normaliseResponse() below.
+const SUPABASE_URL      = process.env.SUPABASE_URL             || 'https://mxtsdgkwzjzlttpotole.supabase.co';
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY        || '';
-const EDGE_CHAT_PATH    = process.env.SUPABASE_EDGE_CHAT_PATH  || '/functions/v1/ai-chat';
+const EDGE_CHAT_PATH    = process.env.SUPABASE_EDGE_CHAT_PATH  || '/functions/v1/ai-router';
 const TIMEOUT_MS        = parseInt(process.env.SUPABASE_EDGE_TIMEOUT_MS || '30000', 10);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -32,6 +52,7 @@ function normaliseResponse(raw) {
     raw?.reply                              ||  // Common Supabase edge pattern
     raw?.response                           ||
     raw?.answer                             ||
+    raw?.output                             ||  // Current edge fallback payload
     raw?.message?.content                   ||  // OpenAI-style nested
     raw?.choices?.[0]?.message?.content     ||  // Full OpenAI format
     raw?.content                            ||
@@ -72,16 +93,9 @@ async function chat(internalRequest, _model) {
     );
   }
 
-  const { messages = [], systemPrompt, maxTokens } = internalRequest;
+  const { messages = [], systemPrompt } = internalRequest;
 
-  // Merge system prompt into the full message list
-  const allMessages = systemPrompt
-    ? [{ role: 'system', content: systemPrompt }, ...messages]
-    : messages;
-
-  // Edge function REQUIRES messages array (confirmed from live API contract).
-  // Strip system messages — edge function manages its own system prompt internally.
-  const conversationMessages = allMessages.filter(
+  const conversationMessages = messages.filter(
     m => m.role === 'user' || m.role === 'assistant'
   );
 
@@ -89,40 +103,40 @@ async function chat(internalRequest, _model) {
     throw new Error('Supabase edge adapter: no user message found in request');
   }
 
-  const payload = {
-    // messages is the required field — always sent regardless of turn count
-    messages: conversationMessages,
-    // max_tokens forwarded as a hint; edge function may honour it
-    ...(maxTokens ? { max_tokens: maxTokens } : {}),
-  };
+  // The edge function falls back to its own default persona (VortexCore's
+  // "digital banker") only when no system-role message is present — verified
+  // live 2026-08-19. It DOES honor a role:"system" entry inside `messages`
+  // (a top-level `system` field is ignored), so the caller's persona must be
+  // forwarded this way or every use case that falls through to this
+  // last-resort vendor silently gets VortexCore's persona instead of its own.
+  const allMessages = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }, ...conversationMessages]
+    : conversationMessages;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  // ai-router's contract is {messages: [...]} directly — verified live
+  // 2026-08-18, no payload translation needed.
+  const payload = { messages: allMessages };
 
-  let raw;
-  try {
-    const response = await fetch(`${SUPABASE_URL}${EDGE_CHAT_PATH}`, {
-      method:  'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey':        SUPABASE_ANON_KEY,
-        'User-Agent':    'Onasis-CORE/1.0',
-      },
-      body:   JSON.stringify(payload),
-      signal: controller.signal,
-    });
+  const timeoutMs = internalRequest.timeoutOverrideMs || TIMEOUT_MS;
 
-    if (!response.ok) {
-      // Intentionally vague — do not surface upstream error details
-      throw new Error(`Supabase edge adapter: upstream returned ${response.status}`);
-    }
+  const response = await fetchWithRetry(`${SUPABASE_URL}${EDGE_CHAT_PATH}`, {
+    method:  'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'apikey':        SUPABASE_ANON_KEY,
+      'User-Agent':    'Onasis-CORE/1.0',
+    },
+    body:   JSON.stringify(payload),
+    timeoutMs,
+  });
 
-    raw = await response.json();
-  } finally {
-    clearTimeout(timer);
+  if (!response.ok) {
+    // Intentionally vague — do not surface upstream error details
+    throw new Error(`Supabase edge adapter: upstream returned ${response.status}`);
   }
 
+  const raw = await response.json();
   return normaliseResponse(raw);
 }
 
@@ -134,16 +148,17 @@ async function chat(internalRequest, _model) {
 async function healthCheck() {
   if (!SUPABASE_ANON_KEY) return false;
 
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), 5000);
-
   try {
-    // Supabase projects expose /rest/v1/ which returns 200 when the project is up
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+    // Supabase projects expose /rest/v1/ to confirm the project is up.
+    // This project restricts /rest/v1/ to service_role keys — anon key returns 401.
+    // 401 is an intentional auth rejection (not a connectivity failure), so treat it
+    // as "project is reachable". Only timeouts and 5xx indicate actual downtime.
+    const response = await fetchWithRetry(`${SUPABASE_URL}/rest/v1/`, {
       headers: { 'apikey': SUPABASE_ANON_KEY },
-      signal:  controller.signal,
+      timeoutMs: healthCheckTimeoutMs('SUPABASE_EDGE'),
+      retries: 0,
     });
-    return response.ok || response.status === 404; // 404 means project is up, no table found
+    return response.ok || response.status === 401 || response.status === 404;
   } catch {
     return false;
   }

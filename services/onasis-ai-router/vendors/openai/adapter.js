@@ -6,10 +6,13 @@
  * Translates Onasis-internal inference requests into OpenAI Chat Completions
  * and normalises responses into the vendor-agnostic internal shape.
  *
- * NOTE:
- *  - We intentionally do not forward tool definitions on this adapter yet.
- *    This keeps fallback behaviour deterministic across providers.
+ * Tool definitions arrive already in OpenAI's native `{type:'function',
+ * function:{name,description,parameters}}` shape (that's the router's
+ * internal format), so they're forwarded as-is — no translation needed.
  */
+
+const { fetchWithRetry, healthCheckTimeoutMs } = require('../_shared/http-client');
+const { assertUsableCompletion } = require('../_shared/response-contract');
 
 const BASE_URL   = process.env.OPENAI_BASE_URL   || 'https://api.openai.com/v1';
 const CHAT_PATH  = process.env.OPENAI_CHAT_PATH  || '/chat/completions';
@@ -25,7 +28,7 @@ function normalizeMessage(raw) {
     },
     done:        true,
     done_reason: raw?.choices?.[0]?.finish_reason || 'stop',
-    tool_calls:  [],
+    tool_calls:  Array.isArray(message.tool_calls) ? message.tool_calls : [],
     usage: {
       prompt_tokens:     raw?.usage?.prompt_tokens || 0,
       completion_tokens: raw?.usage?.completion_tokens || 0,
@@ -52,48 +55,46 @@ async function chat(internalRequest, model) {
     stream: false,
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-  let raw;
-  try {
-    const response = await fetch(`${BASE_URL}${CHAT_PATH}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
-        'User-Agent': 'Onasis-CORE/1.0',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const _detail = await response.text().catch(() => '');
-      throw new Error(`OpenAI adapter: upstream returned ${response.status}`);
-    }
-
-    raw = await response.json();
-  } finally {
-    clearTimeout(timer);
+  if (Array.isArray(internalRequest.tools) && internalRequest.tools.length > 0) {
+    payload.tools = internalRequest.tools;
   }
 
-  return normalizeMessage(raw);
+  const timeoutMs = internalRequest.timeoutOverrideMs || TIMEOUT_MS;
+
+  const response = await fetchWithRetry(`${BASE_URL}${CHAT_PATH}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`,
+      'User-Agent': 'Onasis-CORE/1.0',
+    },
+    body: JSON.stringify(payload),
+    timeoutMs,
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`OpenAI adapter: upstream returned ${response.status} — ${detail.slice(0, 200)}`);
+  }
+
+  const raw = await response.json();
+  return assertUsableCompletion(normalizeMessage(raw), {
+    vendorId: 'openai',
+    sentinels: internalRequest.errorSentinels,
+  });
 }
 
 async function healthCheck() {
   if (!API_KEY) return false;
 
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), 5000);
-
   try {
-    const response = await fetch(`${BASE_URL}/models`, {
+    const response = await fetchWithRetry(`${BASE_URL}/models`, {
       headers: {
         'Authorization': `Bearer ${API_KEY}`,
         'User-Agent': 'Onasis-CORE/1.0',
       },
-      signal: controller.signal,
+      timeoutMs: healthCheckTimeoutMs('OPENAI'),
+      retries: 0,
     });
     return response.ok;
   } catch {

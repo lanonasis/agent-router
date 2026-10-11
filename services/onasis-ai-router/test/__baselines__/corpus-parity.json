@@ -1,0 +1,217 @@
+{
+  "note": "Divergence recorded as-is. See scripts/capture-corpus-parity.js for why this is not an equality assertion.",
+  "files": {
+    "SOUL.md": {
+      "package": {
+        "path": "SOUL.md",
+        "sha": "6abc41e3580ca371",
+        "lines": 109
+      },
+      "router": {
+        "path": "SOUL.md",
+        "sha": "20a217f379aaf6b7",
+        "lines": 239
+      },
+      "identical": false
+    },
+    "IDENTITY-LAYER.md": {
+      "package": {
+        "path": "IDENTITY-LAYER.md",
+        "sha": "4f2e4e31b6420371",
+        "lines": 120
+      },
+      "router": {
+        "path": "IDENTITY-LAYER.md",
+        "sha": "ea42d7e08ef0175e",
+        "lines": 130
+      },
+      "identical": false
+    },
+    "SOURCE-OF-TRUTH.md": {
+      "package": {
+        "path": "SOURCE-OF-TRUTH.md",
+        "sha": "37fa48fae11aca26",
+        "lines": 2150
+      },
+      "router": {
+        "path": "SOURCE-OF-TRUTH.md",
+        "sha": "759606191236e4e7",
+        "lines": 3313
+      },
+      "identical": false
+    },
+    "base.md": {
+      "package": {
+        "path": "base.md",
+        "sha": "626ebf34c39f5654",
+        "lines": 150
+      },
+      "router": {
+        "path": "orchestrator/base.md",
+        "sha": "2e5559bcef6dd549",
+        "lines": 186
+      },
+      "identical": false
+    },
+    "policies.md": {
+      "package": {
+        "path": "policies.md",
+        "sha": "dd85995ce2772e11",
+        "lines": 159
+      },
+      "router": {
+        "path": "orchestrator/policies.md",
+        "sha": "a84a55c4c02383ab",
+        "lines": 345
+      },
+      "identical": false
+    },
+    "tools.md": {
+      "package": {
+        "path": "tools.md",
+        "sha": "aae9ef09fd6f4087",
+        "lines": 511
+      },
+      "router": {
+        "path": "orchestrator/tools.md",
+        "sha": "6596fb8a3dab76c7",
+        "lines": 587
+      },
+      "identical": false
+    },
+    "generic.md": {
+      "package": {
+        "path": "generic.md",
+        "sha": "c5d4e5e88d2ab5a6",
+        "lines": 290
+      },
+      "router": {
+        "path": "frameworks/generic.md",
+        "sha": "11e40ce1e9f67b85",
+        "lines": 290
+      },
+      "identical": false
+    },
+    "coder.md": {
+      "package": {
+        "path": "coder.md",
+        "sha": "519439ad655e42a5",
+        "lines": 115
+      },
+      "router": {
+        "path": "subagents/coder.md",
+        "sha": "638a8023bb26130e",
+        "lines": 122
+      },
+      "identical": false
+    },
+    "researcher.md": {
+      "package": {
+        "path": "researcher.md",
+        "sha": "a60a2677a71f6841",
+        "lines": 141
+      },
+      "router": {
+        "path": "subagents/researcher.md",
+        "sha": "73256bc2ba43148a",
+        "lines": 219
+      },
+      "identical": false
+    },
+    "reviewer.md": {
+      "package": {
+        "path": "reviewer.md",
+        "sha": "ca7e9f8a3cbb5dbe",
+        "lines": 141
+      },
+      "router": {
+        "path": "subagents/reviewer.md",
+        "sha": "8d6232b95159c4e4",
+        "lines": 225
+      },
+      "identical": false
+    },
+    "architect.md": {
+      "package": {
+        "path": "architect.md",
+        "sha": "8586657d744fd2d3",
+        "lines": 144
+      },
+      "router": {
+        "path": "subagents/architect.md",
+        "sha": "5acb59456d6cc2cb",
+        "lines": 350
+      },
+      "identical": false
+    },
+    "tester.md": {
+      "package": {
+        "path": "tester.md",
+        "sha": "543eeb73fd10f06e",
+        "lines": 184
+      },
+      "router": {
+        "path": "subagents/tester.md",
+        "sha": "cb3953c3f43cf93f",
+        "lines": 374
+      },
+      "identical": false
+    }
+  },
+  "routerOnly": [
+    {
+      "path": "subagents/coder-ts.md",
+      "present": true
+    },
+    {
+      "path": "build-source-of-truth.py",
+      "present": true
+    },
+    {
+      "path": "sync-source-of-truth.py",
+      "present": true
+    },
+    {
+      "path": "lanes/onboarding.md",
+      "present": true
+    },
+    {
+      "path": "lanes/concise-helper.md",
+      "present": true
+    },
+    {
+      "path": "lanes/full-assistant.md",
+      "present": true
+    },
+    {
+      "path": "lanes/support.md",
+      "present": true
+    },
+    {
+      "path": "lanes/creative.md",
+      "present": true
+    },
+    {
+      "path": "lanes/technical.md",
+      "present": true
+    },
+    {
+      "path": "lanes/memory-intelligence.md",
+      "present": true
+    },
+    {
+      "path": "lanes/repl-assistant.md",
+      "present": true
+    }
+  ],
+  "packageOnly": [
+    {
+      "path": "package.json",
+      "present": true
+    },
+    {
+      "path": "sync-source-of-truth.py",
+      "present": true
+    }
+  ]
+}

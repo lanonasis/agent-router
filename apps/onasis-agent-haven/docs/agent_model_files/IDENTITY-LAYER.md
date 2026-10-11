@@ -59,6 +59,18 @@ Need a new agent? Write a RISEN prompt, give it the soul header, done. The soul 
 ### 4. Evolvability
 Update SOUL.md once → all agents update. No need to edit 5 different system prompts.
 
+## L0 Profile Composition
+
+For Onasis L0, Agent Heaven is the control plane and the AI router is the
+inference plane. A reviewed profile composes shared identity, a role prompt,
+product-specific behavior, policies, permitted tools, and memory mode. The
+router receives the resulting profile binding only after UAI resolves identity
+and application entitlement.
+
+Applications use one chat endpoint and request an approved profile; they do
+not create their own system prompts or vendor routes. Profile IDs and versions
+are operational metadata, not end-user identity.
+
 ---
 
 ## When to Update SOUL.md

@@ -1,69 +1,116 @@
-# Welcome to your Lovable project
+# Onasis Agent Haven
 
-## Project info
+Agent Haven is the control-plane workspace for the Onasis L0 AI platform. It
+holds the reviewed agent identity material, TypeScript contracts, documentation
+UI, and the `onasis-ai-router` inference service.
 
-**URL**: https://lovable.dev/projects/3f31265b-5461-4ba2-8fb1-cca4e32762b0
+The architecture deliberately separates **what an interaction is allowed to
+be** from **how inference is fulfilled**:
 
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/3f31265b-5461-4ba2-8fb1-cca4e32762b0) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```text
+application -> Auth Gateway UAI -> Agent Heaven profile -> AI router -> internal inference chain
 ```
 
-**Edit a file directly in GitHub**
+- **Agent Haven** owns profile templates, identity material, safety policies,
+  tool/memory capability declarations, and their versioned contracts.
+- **Auth Gateway UAI** resolves the caller and organization before a router
+  request can reach memory or inference.
+- **AI router** owns request execution: scoped memory, tool enforcement,
+  vendor fallthrough, response sanitization, and operational telemetry.
+- **Applications** own their UI and safe presentation of outcomes. They do not
+  choose upstream models/vendors or provide arbitrary system instructions.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Workspace layout
 
-**Use GitHub Codespaces**
+| Path | Purpose |
+|---|---|
+| `apps/onasis-agent-haven` | Vite/React interface for browsing and managing agent documentation and source mappings. |
+| `packages/agent-contracts` | Dependency-free TypeScript contract for agent mappings and the L0 API/profile boundary. |
+| `packages/agent-model-files` | Canonical Agent Heaven prompt source, derived role files, and freshness checker. |
+| `services/onasis-ai-router` | Authenticated L0 inference service with native and OpenAI-compatible APIs. |
+| `docs/L0-AGENT-HEAVEN-CONVERGENCE-PLAN.md` | Approved convergence design and remaining delivery gates. |
+| `infra/` | Deployment templates. The router’s systemd template is primary; the PM2 file is for local/migration use. |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Current platform state
 
-## What technologies are used for this project?
+The L0 contract foundation is implemented in this repository:
 
-This project is built with .
+- Public L0 model identity is `lzero`; `Vortex-L0` is a compatibility alias.
+- The router exposes native `/api/v1/ai-chat` and OpenAI-compatible `/v1`
+  surfaces.
+- Agent contracts define profile manifests, UAI scope, memory partitioning,
+  and outcome types.
+- Agent Heaven source files are generated from
+  `packages/agent-model-files/SOURCE-OF-TRUTH.md` and checked in CI.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+Profile activation is **not yet live**. `X-Onasis-Profile` and
+`X-Onasis-Application` are planned intent metadata, but the router must not
+activate them until UAI returns verified application/profile entitlements.
+Accepting them earlier would let a caller select its own authorization scope.
 
-## How can I deploy this project?
+## Local development
 
-Simply open [Lovable](https://lovable.dev/projects/3f31265b-5461-4ba2-8fb1-cca4e32762b0) and click on Share -> Publish.
+Prerequisites: Node.js 22+ for the router, Bun for the workspace scripts, and
+Python 3 for prompt synchronization checks.
 
-## I want to use a custom domain - is that possible?
+```bash
+cd /opt/lanonasis/shared_services/onasis-agent-haven
+bun install
 
-We don't support custom domains (yet). If you want to deploy your project under your own domain then we recommend using Netlify. Visit our docs for more details: [Custom domains](https://docs.lovable.dev/tips-tricks/custom-domain/)
+# Agent Haven documentation UI
+bun run dev
+
+# Router, bound to 127.0.0.1:8000 by default
+bun run router:start
+```
+
+The React app’s own scripts also work from `apps/onasis-agent-haven`:
+
+```bash
+bun run dev
+bun run build
+bun run lint
+```
+
+Do not start the local router against production credentials or copy `.env`
+files into source control.
+
+## Checks
+
+Run the generated-prompt freshness check whenever changing Agent Heaven model
+files or the source of truth:
+
+```bash
+bun run check:agent-model-files
+```
+
+The check verifies both the canonical package copy and the documentation copy.
+To regenerate derived files after editing the source of truth:
+
+```bash
+python3 packages/agent-model-files/sync-source-of-truth.py
+python3 packages/agent-model-files/sync-source-of-truth.py \
+  --output-dir apps/onasis-agent-haven/docs/agent_model_files
+```
+
+Router tests run from the service directory:
+
+```bash
+cd services/onasis-ai-router
+npm test
+```
+
+Some router HTTP tests create loopback listeners. Sandboxed environments that
+prohibit local listeners skip those tests; normal local development and CI run
+them.
+
+## Documentation
+
+- [L0 Agent Heaven and Router Convergence Plan](docs/L0-AGENT-HEAVEN-CONVERGENCE-PLAN.md)
+- [Router L0 Platform Contract](services/onasis-ai-router/docs/L0-PLATFORM-CONTRACT.md)
+- [Router Integration Guide](services/onasis-ai-router/docs/INTEGRATION-GUIDE.md)
+- [Router architecture](services/onasis-ai-router/docs/ARCHITECTURE.md)
+
+The integration guide is the application-facing API reference. It is not a
+license to add application-specific routes, models, vendors, or prompt logic to
+the router.

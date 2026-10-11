@@ -1,0 +1,24 @@
+name: Agent model files
+
+on:
+  pull_request:
+    paths:
+      - 'packages/agent-model-files/**'
+      - 'apps/onasis-agent-haven/docs/agent_model_files/**'
+      - 'packages/agent-contracts/**'
+      - '.github/workflows/agent-model-files.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/agent-model-files/**'
+      - 'apps/onasis-agent-haven/docs/agent_model_files/**'
+      - 'packages/agent-contracts/**'
+      - '.github/workflows/agent-model-files.yml'
+
+jobs:
+  generated-files-current:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Agent Heaven derived prompt files
+        run: npm run check:agent-model-files

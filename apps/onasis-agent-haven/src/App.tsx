@@ -9,6 +9,7 @@ import AgentsLayout from "./layouts/AgentsLayout";
 import AgentsDashboard from "./pages/AgentsDashboard";
 import AgentDetails from "./pages/AgentDetails";
 import AgentCreate from "./pages/AgentCreate";
+import ChainWiring from "./pages/ChainWiring";
 import DocsBrowser from "./pages/DocsBrowser";
 import NotFound from "./pages/NotFound";
 
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/docs" element={<AgentsLayout />}>
               <Route index element={<DocsBrowser />} />
             </Route>
+            <Route path="/chain" element={<ChainWiring />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

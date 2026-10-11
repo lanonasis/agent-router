@@ -1,0 +1,20 @@
+{
+  "profileId": "l0-concierge",
+  "applicationId": "l0-concierge",
+  "version": "1.0.0",
+  "status": "active",
+  "publicModel": "lzero",
+  "roleTemplate": "generic",
+  "identityTemplate": "IDENTITY-LAYER.md",
+  "policyDocuments": ["policies.md"],
+  "allowedTools": ["memory.search", "memory.get"],
+  "memoryMode": "user-scoped",
+  "allowedMessageRoles": ["user", "assistant", "tool"],
+  "allowedContextFields": ["locale", "surface"],
+  "boundUseCase": "dashboard-assistant",
+  "limits": {
+    "maxInputTokens": 8000,
+    "maxOutputTokens": 1200,
+    "requestTimeoutMs": 60000
+  }
+}

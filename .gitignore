@@ -27,10 +27,20 @@ dist-ssr
 .claude/settings.local.json
 .cursor/settings.local.json
 .windsurf/settings.local.json
+.pi
 
-# Service secrets (loaded by systemd from /etc/onasis-ai-router/)
+# Service secrets (loaded directly by the onasis-ai-router.service systemd unit
+# via `dotenvx run -f services/onasis-ai-router/.env.production` at deploy path)
 services/onasis-ai-router/.env.keys
 services/onasis-ai-router/.env.production
 
+# Historically leaked to git history (untracked 2026-08-19, keys need rotation
+# regardless — see onasis-ai-router security audit) — never re-add these.
+services/onasis-ai-router/.env
+services/onasis-ai-router/.env.branded
+
 # Router logs (runtime artefacts)
 services/onasis-ai-router/logs/
+
+# Local Netlify folder
+.netlify

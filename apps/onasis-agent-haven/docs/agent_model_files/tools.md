@@ -497,6 +497,14 @@ Write to the agent's memory store.
 4. **Respect approval levels.** Never bypass — even in "auto" mode, the approval level defines the contract.
 5. **Blocked patterns are absolute.** No override, no exception, no workaround.
 
+## L0 Router Capability Boundary
+
+Agent Heaven declares a profile's allowed tools and memory mode. The router
+enforces that declaration after UAI resolution; a prompt must never grant a
+capability that the profile or caller is not entitled to use. Applications send
+validated context fields defined by their profile, never raw system prompts or
+unbounded tool instructions.
+
 ---
 
 *Loaded by: tool_registry.py → load_tool_definitions()*

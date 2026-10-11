@@ -1,269 +1,141 @@
-# Onasis AI Service Router
+# Onasis AI Router
 
-**"Change the world one simple solution at a time"**
+The Onasis AI Router is the authenticated inference service for the L0
+platform. It accepts a caller through Auth Gateway UAI, applies router-owned
+prompt and memory policy, selects an internal inference path, and returns a
+branded vendor-neutral response.
 
-AI-powered coding assistant with semantic memory, powered by Ollama and branded with Onasis personality.
+It is not an application-specific chatbot endpoint and it is not a direct
+upstream-model proxy.
 
-## 🚀 Quick Start (5 minutes)
+```text
+application -> UAI identity resolution -> router policy -> scoped memory/tools -> internal inference chain
+```
 
-Perfect for 8GB RAM systems. Just 2 models, fully branded.
+## Public contracts
+
+Start with the documents that define the actual contract:
+
+- [L0 Platform Contract](docs/L0-PLATFORM-CONTRACT.md)
+- [Integration Guide](docs/INTEGRATION-GUIDE.md)
+- [Architecture and codemap](docs/ARCHITECTURE.md)
+
+Public base URL: `https://ai.vortexcore.app`.
+
+| Surface | Endpoint | Audience |
+|---|---|---|
+| Health | `GET /health` | Operational monitoring; unauthenticated. |
+| Native chat | `POST /api/v1/ai-chat` | First-party/router-aware clients. |
+| Supabase-style native alias | `POST /functions/v1/ai-chat` | Existing compatible callers. |
+| OpenAI model discovery | `GET /v1/models` | OpenAI-compatible clients; authenticated. |
+| OpenAI chat | `POST /v1/chat/completions` | SDKs and harnesses that require OpenAI shape. |
+| Session memory proxy | `POST /api/v1/session-memory/events`, `GET /api/v1/session-memory/:sessionId` | Authenticated router clients only. |
+
+The public model is `lzero`, owned by Onasis. `Vortex-L0` and `L0` are
+compatibility aliases; the router never exposes the real upstream vendor or
+model.
+
+## Authentication and request rules
+
+Every protected endpoint resolves identity through Auth Gateway UAI.
+
+- Native `/api/v1/ai-chat`: send a `lano_` key as `X-API-Key`, or a user JWT /
+  OAuth token as `Authorization: Bearer`.
+- OpenAI `/v1`: accepts the OpenAI Bearer convention for `lano_` keys and
+  normalizes it at the facade; JWT/OAuth Bearers are passed to UAI unchanged.
+- Do not send both credential headers.
+- `lms_` and `vx_` credentials are not router credentials unless an explicit
+  issuer-to-identity mapping is implemented and verified.
+
+The native request shape is:
+
+```json
+{
+  "use_case": "ask-ai",
+  "messages": [{ "role": "user", "content": "Hello" }]
+}
+```
+
+The OpenAI-compatible request shape is:
+
+```json
+{
+  "model": "lzero",
+  "messages": [{ "role": "user", "content": "Hello" }]
+}
+```
+
+`stream: true` is deliberately rejected until real SSE support exists. The
+native answer field is `response`; the OpenAI facade uses
+`choices[0].message.content`.
+
+## Agent Heaven profiles
+
+Agent Heaven is becoming the profile control plane. It defines reviewed
+identity, role templates, policy documents, allowed tools, memory mode, and
+limits. The router will consume a versioned profile only after UAI can prove
+the caller’s application/profile entitlement.
+
+That entitlement check is not implemented yet. Do not rely on
+`X-Onasis-Profile` or `X-Onasis-Application` to select a persona today; they
+are planned metadata, not authorization. Current router use cases continue to
+use the router’s existing prompt composition and validation.
+
+## Local operation
+
+Requirements: Node.js 22+ and a configured local development environment. The
+server binds loopback-only by default.
 
 ```bash
-cd /opt/lanonasis/lan-onasis-monorepo/scripts/router
-
-# 1. Run quick setup (downloads 2 models, ~3GB)
-./quick-setup.sh
-
-# 2. Add your API key
-nano .env
-# Change: MEMORY_API_KEY=lano_your_actual_key
-
-# 3. Start the server
-node server.js
-
-# 4. Test it
-curl http://localhost:3001/health
+cd /opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router
+npm install
+npm start
 ```
 
-## 📦 What Gets Installed
+Defaults:
 
-### 2 Lightweight Models
+- Bind host: `127.0.0.1`
+- Port: `8000`
+- Health: `http://127.0.0.1:8000/health`
+- Public ingress is expected to be handled by the host reverse proxy.
 
-1. **qwen2.5-coder:3b** (~2GB) - Primary coding model
-   - Code generation and analysis
-   - Repository realignment
-   - Debugging and refactoring
-
-2. **qwen2:1.5b** (~1GB) - General purpose + tool summarization
-   - Quick responses
-   - Tool result summarization
-   - General queries
-
-**Total**: ~3GB disk, ~4GB RAM when running
-
-## 🎨 Onasis Branding
-
-The router includes branded system prompts:
-
-> "You are L0, Onasis's AI coding assistant. Our mission: 'Change the world one simple solution at a time.' You help users build better code with intelligence, memory, and clarity."
-
-Responses will reflect this personality and mission.
-
-## 🔧 Configuration
-
-Edit `.env` to customize:
+Configuration is environment-driven. Do not commit credentials. Relevant
+settings include `AUTH_GATEWAY_URL`, `API_BASE_URL`, `OLLAMA_BASE_URL`,
+`PROMPT_IDENTITY_MODE`, `PROMPTS_ROOT`, and memory-prefetch limits. Inspect a
+prompt composition locally with:
 
 ```bash
-# Models
-OLLAMA_MODEL=qwen2.5-coder:3b        # Primary coding
-OLLAMA_TOOL_MODEL=qwen2:1.5b         # Summarization
-
-# Your API key
-MEMORY_API_KEY=lano_your_key_here
-
-# Branding (customize persona)
-OLLAMA_SYSTEM_PROMPT=You are L0...
+npm run inspect:prompt -- ask-ai --preview
 ```
 
-## 🌐 API Endpoints
+## Reliability and privacy
 
-Once running on port 3001:
+- UAI identity and organization scope partition memory-prefetch cache and
+  in-flight work.
+- Memory prefetch degrades to an answer without context rather than turning a
+  memory outage into a router error.
+- A single unhealthy internal provider means `/health` is `200 degraded`; only
+  no viable provider produces `503 unavailable`.
+- The router applies circuit breaking, latency-aware tail demotion, and vendor
+  fallthrough internally.
+- User-facing responses must not expose upstream vendors, models, internal
+  workspace/agent identity, or another caller’s memory.
 
-### Health Check
+## Tests
+
 ```bash
-curl http://localhost:3001/health
+npm test
 ```
 
-### Chat (with memory)
-```bash
-curl -X POST http://localhost:3001/api/v1/ai-chat \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-key" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "Analyze this repo structure"}
-    ]
-  }'
-```
+The suite covers response contracts, OpenAI compatibility, UAI transport
+normalization, cache isolation, tool behavior, health semantics, and vendor
+fallthrough. HTTP contract tests use local loopback listeners and may be
+skipped only in sandboxed environments that prohibit listener creation.
 
-### Supabase-style endpoint
-```bash
-curl -X POST http://localhost:3001/functions/v1/ai-chat \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-key" \
-  -d '{"prompt": "Help me with this code"}'
-```
+## Runtime ownership
 
-### Service Discovery
-```bash
-curl http://localhost:3001/ai-services
-```
-
-## 🧠 Features
-
-### Semantic Memory Integration
-- Automatic memory prefetch based on user queries
-- Tool calls: `memory.search`, `memory.get`, `memory.write`
-- Context-aware responses using past conversations
-
-### Memory Tools Available
-```javascript
-// Search memories
-memory.search({ query: "authentication", topK: 5 })
-
-// Get specific memories
-memory.get({ ids: ["mem-id-1", "mem-id-2"] })
-
-// Create new memory
-memory.write({
-  title: "Auth Implementation",
-  content: "OAuth2 setup with PKCE...",
-  memory_type: "knowledge",
-  tags: ["auth", "security"]
-})
-```
-
-### Automatic Tool Result Summarization
-Large tool responses are automatically summarized using `qwen2:1.5b` to keep context manageable.
-
-## 📚 Documentation
-
-- **QUICK_START.md** - 2-model setup guide
-- **OLLAMA_SETUP_LIGHTWEIGHT.md** - Full lightweight guide
-- **OLLAMA_SETUP.md** - Advanced options (16GB+ RAM)
-
-## 🔄 Model Usage
-
-### When each model is used:
-
-| Scenario | Model Used | Why |
-|----------|-----------|-----|
-| User asks coding question | qwen2.5-coder:3b | Better code understanding |
-| Tool returns large data | qwen2:1.5b | Fast summarization |
-| Memory prefetch | (none - direct API) | Efficient |
-| General chat | qwen2.5-coder:3b | Primary model |
-
-## 🛠️ Troubleshooting
-
-### Model not found
-```bash
-ollama pull qwen2.5-coder:3b
-ollama pull qwen2:1.5b
-```
-
-### Slow responses
-```bash
-# In .env, reduce memory usage:
-MEMORY_PREFETCH_ENABLED=false
-TOOL_RESULT_SUMMARIZE=false
-```
-
-### Check what's loaded
-```bash
-ollama ps
-```
-
-### Restart Ollama
-```bash
-# Kill and restart
-pkill ollama
-ollama serve
-```
-
-## 🎯 Use Cases
-
-### Repository Realignment
-```bash
-curl -X POST http://localhost:3001/api/v1/ai-chat \
-  -H "X-API-Key: your-key" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "Analyze this repo structure and suggest improvements: [structure details]"}
-    ]
-  }'
-```
-
-### Code Review
-```bash
-curl -X POST http://localhost:3001/api/v1/ai-chat \
-  -H "X-API-Key: your-key" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "Review this function: [code here]"}
-    ]
-  }'
-```
-
-### Memory-Powered Queries
-```bash
-curl -X POST http://localhost:3001/api/v1/ai-chat \
-  -H "X-API-Key: your-key" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "What did we decide about the auth implementation?"}
-    ]
-  }'
-```
-The AI will search memory first before responding!
-
-## 🚦 Production Tips
-
-### Run as a service
-```bash
-# Using PM2
-npm install -g pm2
-pm2 start server.js --name onasis-ai-router
-pm2 save
-```
-
-### Monitor logs
-```bash
-pm2 logs onasis-ai-router
-```
-
-### Auto-restart on reboot
-```bash
-pm2 startup
-```
-
-## 🔐 Security
-
-- API key authentication required
-- Integration with auth-gateway service
-- Usage logging and tracking
-- Privacy-safe response handling
-
-## 📊 Performance
-
-On 8GB RAM system:
-- Response time: 2-5 seconds (coding)
-- Response time: 1-3 seconds (general)
-- Memory usage: ~4GB
-- Concurrent users: 5-10
-
-## 🎨 Customization
-
-### Change the persona
-Edit `.env`:
-```bash
-OLLAMA_SYSTEM_PROMPT=You are L0, Onasis's friendly coding buddy...
-```
-
-### Add more branding
-```bash
-BRAND_NAME=Onasis
-BRAND_TAGLINE=Your custom tagline
-BRAND_AI_NAME=L0
-```
-
-## 🆘 Support
-
-- Issues: Check OLLAMA_SETUP_LIGHTWEIGHT.md
-- Questions: See QUICK_START.md
-- Advanced: See OLLAMA_SETUP.md
-
----
-
-**Built with ❤️ by Onasis**
-
-*"Change the world one simple solution at a time"*
+The repository’s systemd template under `../../infra/systemd/` declares the
+intended production runtime model. It contains host-specific paths, so verify
+the installed unit before treating it as a deployable artifact. The PM2
+configuration in `../../infra/pm2/` is for local development or a deliberate
+migration; it is not the intended production owner.

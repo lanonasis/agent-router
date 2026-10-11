@@ -12,6 +12,9 @@
  *  - This file MUST NOT be imported anywhere that builds client responses directly
  */
 
+const { fetchWithRetry, healthCheckTimeoutMs } = require('../_shared/http-client');
+const { assertUsableCompletion } = require('../_shared/response-contract');
+
 const BASE_URL    = process.env.OLLAMA_BASE_URL  || 'http://localhost:11434';
 const CHAT_PATH   = process.env.OLLAMA_CHAT_PATH || '/api/chat';
 const TIMEOUT_MS  = parseInt(process.env.OLLAMA_TIMEOUT_MS || '30000', 10);
@@ -48,35 +51,33 @@ async function chat(internalRequest, model) {
     ...(Array.isArray(tools) && tools.length > 0 ? { tools } : {}),
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutMs = internalRequest.timeoutOverrideMs || TIMEOUT_MS;
 
   let raw;
-  try {
-    const response = await fetch(`${BASE_URL}${CHAT_PATH}`, {
-      method:  'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent':   'Onasis-CORE/1.0',
-      },
-      body:   JSON.stringify(payload),
-      signal: controller.signal,
-    });
+  const response = await fetchWithRetry(`${BASE_URL}${CHAT_PATH}`, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent':   'Onasis-CORE/1.0',
+    },
+    body:   JSON.stringify(payload),
+    timeoutMs,
+  });
 
-    if (!response.ok) {
-      // Do not surface Ollama error body to callers — log internally only
-      const _detail = await response.text().catch(() => '');
-      throw new Error(`Ollama adapter: upstream returned ${response.status}`);
-    }
-
-    raw = await response.json();
-  } finally {
-    clearTimeout(timer);
+  if (!response.ok) {
+    // The client-facing route handler always returns a generic message on
+    // error (see routeToAIService's catch) — only this.logger.error sees
+    // error.message — so it's safe to include the upstream body there for
+    // diagnosability without surfacing Ollama's response to callers.
+    const detail = await response.text().catch(() => '');
+    throw new Error(`Ollama adapter: upstream returned ${response.status} — ${detail.slice(0, 200)}`);
   }
+
+  raw = await response.json();
 
   // ── Normalise to vendor-agnostic format ───────────────────────────────────
   // Keys here match what ai-service-router.js already knows how to read.
-  return {
+  const normalised = {
     message:     raw.message || { role: 'assistant', content: '' },
     done:        raw.done ?? true,
     done_reason: raw.done_reason || 'stop',
@@ -88,6 +89,11 @@ async function chat(internalRequest, model) {
       total_tokens:      (raw.prompt_eval_count || 0) + (raw.eval_count || 0),
     },
   };
+
+  return assertUsableCompletion(normalised, {
+    vendorId: 'ollama',
+    sentinels: internalRequest.errorSentinels,
+  });
 }
 
 /**
@@ -95,10 +101,11 @@ async function chat(internalRequest, model) {
  * Used by the router's health endpoint.
  */
 async function healthCheck() {
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch(`${BASE_URL}/api/tags`, { signal: controller.signal });
+    const response = await fetchWithRetry(`${BASE_URL}/api/tags`, {
+      timeoutMs: healthCheckTimeoutMs('OLLAMA'),
+      retries: 0,
+    });
     return response.ok;
   } catch {
     return false;

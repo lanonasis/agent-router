@@ -12,6 +12,8 @@
  *  - This file MUST NOT be imported anywhere that builds client responses directly
  */
 
+const { fetchWithRetry, healthCheckTimeoutMs } = require('../_shared/http-client');
+
 const BASE_URL    = process.env.DEEPSEEK_BASE_URL  || 'https://api.deepseek.com';
 const CHAT_PATH   = process.env.DEEPSEEK_CHAT_PATH || '/chat/completions';
 const TIMEOUT_MS  = parseInt(process.env.DEEPSEEK_TIMEOUT_MS || '30000', 10);
@@ -52,32 +54,29 @@ async function chat(internalRequest, model) {
     ...(Array.isArray(tools) && tools.length > 0 ? { tools } : {}),
   };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timeoutMs = internalRequest.timeoutOverrideMs || TIMEOUT_MS;
 
-  let raw;
-  try {
-    const response = await fetch(`${BASE_URL}${CHAT_PATH}`, {
-      method:  'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`,
-        'User-Agent':   'Onasis-CORE/1.0',
-      },
-      body:   JSON.stringify(payload),
-      signal: controller.signal,
-    });
+  const response = await fetchWithRetry(`${BASE_URL}${CHAT_PATH}`, {
+    method:  'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`,
+      'User-Agent':   'Onasis-CORE/1.0',
+    },
+    body:   JSON.stringify(payload),
+    timeoutMs,
+  });
 
-    if (!response.ok) {
-      // Do not surface DeepSeek error body to callers — log internally only
-      const _detail = await response.text().catch(() => '');
-      throw new Error(`DeepSeek adapter: upstream returned ${response.status}`);
-    }
-
-    raw = await response.json();
-  } finally {
-    clearTimeout(timer);
+  if (!response.ok) {
+    // The client-facing route handler always returns a generic message on
+    // error (see routeToAIService's catch) — only this.logger.error sees
+    // error.message — so it's safe to include the upstream body there for
+    // diagnosability without surfacing DeepSeek's response to callers.
+    const detail = await response.text().catch(() => '');
+    throw new Error(`DeepSeek adapter: upstream returned ${response.status} — ${detail.slice(0, 200)}`);
   }
+
+  const raw = await response.json();
 
   // ── Normalise to vendor-agnostic format ───────────────────────────────────
   // Keys here match what ai-service-router.js already knows how to read.
@@ -104,16 +103,15 @@ async function chat(internalRequest, model) {
 async function healthCheck() {
   if (!API_KEY) return false;
 
-  const controller = new AbortController();
-  setTimeout(() => controller.abort(), 5000);
   try {
     // Simple lightweight request to check API availability
-    const response = await fetch(`${BASE_URL}/models`, {
+    const response = await fetchWithRetry(`${BASE_URL}/models`, {
       headers: {
         'Authorization': `Bearer ${API_KEY}`,
         'User-Agent': 'Onasis-CORE/1.0',
       },
-      signal: controller.signal,
+      timeoutMs: healthCheckTimeoutMs('DEEPSEEK'),
+      retries: 0,
     });
     return response.ok;
   } catch {

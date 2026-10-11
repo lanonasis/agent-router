@@ -1,0 +1,9 @@
+# SPA fallback. App.tsx uses BrowserRouter, so /agents/:agentId and /docs are
+# client-side routes with no file behind them. Without this rule Netlify
+# resolves the path on the server first and returns its own 404 before React
+# ever loads — every deep link and every refresh on a sub-route breaks, while
+# clicking through from / works fine. That asymmetry is why it survives casual
+# testing.
+#
+# Must stay last: _redirects is evaluated top-down and this matches everything.
+/*    /index.html   200

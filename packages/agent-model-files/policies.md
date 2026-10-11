@@ -135,6 +135,16 @@ If two sub-agents produce conflicting output:
 - `tester` does not refactor — only test and report.
 - `architect` does not implement — only designs and plans.
 
+### L0 Identity and Scope
+- UAI-resolved identity and organization scope are authoritative. Do not infer
+  identity from a display name, a profile ID, a memory result, or client text.
+- An application may request an approved profile, but the router must verify
+  the application/profile binding against UAI entitlement data.
+- Profiles own system/developer instruction. Public chat requests may contain
+  user, assistant, and approved tool history only.
+- Never reveal internal vendor, upstream model, agent, workspace, gateway, or
+  another caller's memory in a user-facing response.
+
 ---
 
 ## Policy Versioning
