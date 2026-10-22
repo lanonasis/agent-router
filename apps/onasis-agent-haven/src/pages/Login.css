@@ -1,0 +1,328 @@
+/* ── Login page: terminal aesthetic ─────────────────────────────────────────── */
+
+/* Reset only for this page */
+.login-page {
+  margin: 0;
+  padding: 0;
+  background: #0a0a0a;
+  color: #00ff00;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family:
+    "Monaco",
+    "Menlo",
+    "Ubuntu Mono",
+    monospace;
+}
+
+.login-page * {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Terminal chrome */
+.terminal {
+  background: #1a1a1a;
+  border: 2px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+  position: relative;
+}
+
+/* Title-bar dots */
+.terminal-header {
+  border-bottom: 1px solid #333;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+  color: #888;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.dot.red {
+  background: #ff5f56;
+}
+
+.dot.yellow {
+  background: #ffbd2e;
+}
+
+.dot.green {
+  background: #27c93f;
+}
+
+.title {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+/* Content typography */
+.terminal-content {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.prompt {
+  color: #00ff00;
+  font-weight: bold;
+}
+
+.command {
+  color: #fff;
+}
+
+.output {
+  color: #888;
+  margin-left: 20px;
+}
+
+.success {
+  color: #00ff00;
+}
+
+.info {
+  color: #00ffff;
+}
+
+.error {
+  color: #ff5f56;
+}
+
+/* Section headings */
+.section-title {
+  color: #ffbd2e;
+  margin-top: 15px;
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+/* Form controls */
+.form-group {
+  margin: 10px 0;
+}
+
+.form-label {
+  color: #888;
+  font-size: 12px;
+  margin-bottom: 5px;
+  display: block;
+}
+
+.form-input {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #00ff00;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.form-input:focus {
+  border-color: #00ff00;
+  box-shadow: 0 0 5px rgba(0, 255, 0, 0.3);
+}
+
+.form-input::placeholder {
+  color: #555;
+}
+
+/* Buttons */
+.btn {
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  color: #00ff00;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 20px;
+  transition: all 0.3s;
+  width: 100%;
+  margin-top: 15px;
+}
+
+.btn:hover:not(:disabled) {
+  background: #555;
+  border-color: #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: #888;
+  margin-top: 10px;
+}
+
+.btn-secondary:hover {
+  color: #00ffff;
+  border-color: #00ffff;
+  box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+}
+
+/* Mode toggle */
+.mode-toggle {
+  display: flex;
+  background: #0a0a0a;
+  border-radius: 4px;
+  border: 1px solid #333;
+  margin-bottom: 20px;
+}
+
+.mode-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px;
+  transition: all 0.3s;
+}
+
+.mode-btn.active {
+  background: #333;
+  color: #00ff00;
+}
+
+/* Blinking cursor */
+.blink {
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Loading pulse */
+.loading {
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Links */
+.login-page a {
+  color: #00ffff;
+  text-decoration: none;
+}
+
+.login-page a:hover {
+  text-decoration: underline;
+}
+
+/* OAuth */
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 15px 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: #333;
+}
+
+.divider-text {
+  color: #888;
+  font-size: 10px;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.oauth-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.oauth-btn {
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  color: #888;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 10px 8px;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.oauth-btn:hover {
+  background: #1a1a1a;
+  border-color: #00ff00;
+  color: #00ff00;
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+}
+
+.oauth-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.oauth-icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.oauth-text {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+
+/* Responsive */
+@media (max-width: 480px) {
+  .oauth-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .terminal {
+    width: 95%;
+    padding: 15px;
+  }
+}

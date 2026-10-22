@@ -10,10 +10,27 @@ const AIServiceRouter = require('./core/ai-service-router');
 const { summariseHealth } = require('./core/health-status');
 const openaiCompat = require('./core/openai-compat');
 require('dotenv').config();
-// Installs the shared keep-alive Agent as early as possible so every
-// outbound fetch() in this process (vendors, memory-prefetch, tool calls,
-// auth-gateway) benefits from connection reuse from the first request.
-require('./vendors/_shared/http-client');
+
+// ── Phase 5: startup lane-typing validation (spec §7) ──
+// Fails fast if the shipped configuration violates lane contracts.
+const { validateLaneConfiguration } = require('./vendors/vendor-config');
+const { USE_CASES, VENDOR_REGISTRY } = require('./vendors');
+const { valid: laneOk, violations } = validateLaneConfiguration({
+  useCases: USE_CASES,
+  vendorRegistry: VENDOR_REGISTRY,
+});
+if (!laneOk) {
+  const msg = violations
+    .map((v) => `[${v.code}] ${v.message}`)
+    .join('\n    ');
+  console.error(
+    'FATAL: lane-typing validation failed at startup (%d violation(s)):\n    %s',
+    violations.length,
+    msg,
+  );
+  process.exit(1);
+}
+
 
 const app = express();
 // Keep fallback aligned with production systemd defaults to avoid local port collisions.

@@ -41,6 +41,10 @@ const { pickModel, resolveMaxTokens, resolveVendorOrder, resolveVendorStatus } =
 const USE_CASES = {
   'landing-guide': {
     description: 'Onboarding AI guide on landing pages',
+    // Completion lane (spec §7): a page-load question answered in one
+    // stateless call. No agent vendor may sit in this chain — a completion
+    // lane exists to be fast, and the agent gateways are neither.
+    lane: 'completion',
     // Raised from 400 by analogy with ask-ai below, whose ceiling was measured.
     // This lane has not been sampled directly; the truncation warning in
     // _noteTruncation will say so if 1000 also turns out to be short.
@@ -48,11 +52,18 @@ const USE_CASES = {
     temperature: 0.7,
     systemPromptKey: 'onboarding',
     modelLane: 'lana',   // LANA (Reasoning/Planning)
-    vendorOrder: ['pi', 'minimax', 'openclaw', 'openai', 'anthropic', 'lmstudio'],
+    // openclaw removed: it is an agent-lane vendor and this is a
+    // completion lane. The order of what remains is unchanged.
+    vendorOrder: ['pi', 'minimax', 'openai', 'anthropic', 'lmstudio'],
     streamable: false,
   },
   'ask-ai': {
     description: 'Quick "Ask AI" button on index and dashboard pages',
+    // Completion lane (spec §7): someone is watching a spinner, so this is
+    // one stateless call. The 350-token cap that truncated every reply here
+    // in 2026-09 was the same failure this lane typing exists to prevent —
+    // a low ceiling pointed at a tool-using agent.
+    lane: 'completion',
     // Raised from 350 on 2026-09-04, after every reply to "How do I rotate my
     // API key?" came back cut mid-word.
     //
@@ -71,12 +82,20 @@ const USE_CASES = {
     temperature: 0.65,
     systemPromptKey: 'concise-helper',
     modelLane: 'lana',
-    vendorOrder: ['pi', 'minimax', 'openclaw', 'openai', 'anthropic', 'lmstudio'],
+    // openclaw removed: it is an agent-lane vendor and this is a
+    // completion lane. The order of what remains is unchanged.
+    vendorOrder: ['pi', 'minimax', 'openai', 'anthropic', 'lmstudio'],
     streamable: false,
   },
   'dashboard-assistant': {
     description: 'Full AI assistant panel inside user dashboards',
-    maxTokens: 1200,
+    // Agent lane (spec §7): the chain keeps openclaw, a stateful,
+    // tool-using gateway, so the ceiling has to clear the agent-lane floor.
+    lane: 'agent',
+    // Raised from 1200 to the agent-lane floor (2000). The chain carries an
+    // agent-lane vendor, and a ceiling below the floor is a startup
+    // validation error rather than a runtime surprise.
+    maxTokens: 2000,
     temperature: 0.75,
     systemPromptKey: 'full-assistant',
     modelLane: 'lana',
@@ -85,15 +104,26 @@ const USE_CASES = {
   },
   'support-chat': {
     description: 'Customer support and help desk conversations',
+    // Completion lane (spec §7): one stateless call per turn. Support is
+    // latency-sensitive and short-form, so it does not want an agent.
+    lane: 'completion',
+    // This ceiling is measured, not derived from the floor — a completion
+    // lane has no agent in it to need the tokens, and the value below is
+    // what the replies were actually sampled at.
     maxTokens: 800,
     temperature: 0.6,
     systemPromptKey: 'support',
     modelLane: 'lana',
-    vendorOrder: ['pi', 'minimax', 'openclaw', 'openai', 'anthropic', 'lmstudio'],
+    // openclaw removed: it is an agent-lane vendor and this is a
+    // completion lane. The order of what remains is unchanged.
+    vendorOrder: ['pi', 'minimax', 'openai', 'anthropic', 'lmstudio'],
     streamable: false,
   },
   'content-generation': {
     description: 'Marketing copy, summaries, and content creation',
+    // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
+    // clear the agent-lane floor.
+    lane: 'agent',
     maxTokens: 2000,
     temperature: 0.85,
     systemPromptKey: 'creative',
@@ -103,6 +133,9 @@ const USE_CASES = {
   },
    'code-assist': {
      description: 'Developer and technical assistance',
+     // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
+     // clear the agent-lane floor.
+     lane: 'agent',
      maxTokens: 2000,
      temperature: 0.2,
      systemPromptKey: 'technical',
@@ -112,6 +145,9 @@ const USE_CASES = {
    },
    'memory-analysis': {
      description: 'Memory intelligence pattern analysis and insights',
+     // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
+     // clear the agent-lane floor.
+     lane: 'agent',
      maxTokens: 2000,
      temperature: 0.3,
      systemPromptKey: 'memory-intelligence',
@@ -123,6 +159,9 @@ const USE_CASES = {
    },
    'memory-analysis-json': {
      description: 'Memory intelligence tasks for the edge functions, answered in bare JSON',
+     // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
+     // clear the agent-lane floor.
+     lane: 'agent',
      // Reached through POST /api/v1/internal/memory-analysis (core/memory-analysis.js),
      // which builds the request itself. Same budget as memory-analysis: the
      // first-choice vendor is a reasoning model whose hidden reasoning counts
@@ -136,7 +175,12 @@ const USE_CASES = {
    },
    'repl-nlp': {
      description: 'REPL CLI natural language command interpretation',
-     maxTokens: 1500,
+     // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
+     // clear the agent-lane floor. Raised from 1500 — the REPL's synthesis
+     // pass reads tool results back, which is exactly where a short ceiling
+     // truncates mid-answer.
+     lane: 'agent',
+     maxTokens: 2000,
      temperature: 0.2,
      systemPromptKey: 'repl-assistant',
      modelLane: 'coda',
@@ -197,6 +241,18 @@ function systemPromptForUseCase(useCaseConfig) {
 //   'active'     — fully wired, routes live traffic
 //   'stub'       — file present but NOT wired; traffic falls through to active
 //   'deprecated' — traffic migrated away; remove after deprecationDate
+//
+// lane values (spec §7) — what KIND of call this vendor serves:
+//   'completion' — stateless, single call. One prompt in, one answer out.
+//   'agent'      — stateful, tool-using, multi-round-trip. The vendor may
+//                  make several upstream calls and read long tool results
+//                  back, so a short token ceiling truncates it.
+//
+// A vendor that does not declare a lane cannot be validated against one,
+// so every entry here carries one. The pairing is checked at startup by
+// validateLaneConfiguration(): a completion lane may not carry an
+// agent-lane vendor, and an agent lane that carries one must have a token
+// ceiling at or above AGENT_LANE_MIN_TOKENS (default 2000).
 
 const ALL_USE_CASES = [
   'landing-guide', 'ask-ai', 'dashboard-assistant',
@@ -261,6 +317,9 @@ const VENDOR_REGISTRY = {
   // (e.g. a genuinely small "speed" model) are loaded and confirmed working.
   lmstudio: {
     status: 'active',
+    // Completion lane: a plain chat-completions endpoint. One request,
+    // one response, no session and no tools.
+    lane: 'completion',
     adapter: require('./lmstudio/adapter'),
     // Model names are internal — clients never see them
     models: {
@@ -291,6 +350,9 @@ const VENDOR_REGISTRY = {
   ollama: {
     status: 'deprecated',
     deprecationDate: '2026-09-18',
+    // Completion lane: same shape as lmstudio — a chat-completions
+    // endpoint. Declared for completeness while the entry is deprecated.
+    lane: 'completion',
     adapter: require('./ollama/adapter'),
     // Model names are internal — clients never see them
     models: {
@@ -353,6 +415,9 @@ const VENDOR_REGISTRY = {
   'supabase-edge': {
     status: 'deprecated',
     deprecationDate: '2026-08-19',
+    // Completion lane: a chat-completions endpoint. Declared for
+    // completeness while the entry is deprecated.
+    lane: 'completion',
     adapter: require('./supabase-edge/adapter'),
     models: {
       // 'auto' signals that the edge function picks the model internally
@@ -367,6 +432,8 @@ const VENDOR_REGISTRY = {
   // ── Cloud fallbacks (active) ───────────────────────────────────────────────
   anthropic: {
     status: 'active',
+    // Completion lane: a plain messages endpoint, one call per request.
+    lane: 'completion',
     adapter: require('./anthropic/adapter'),
     models: {
       speed:   pickModel(process.env.ANTHROPIC_FAST_MODEL, 'claude-3-5-haiku-latest'),
@@ -378,6 +445,9 @@ const VENDOR_REGISTRY = {
 
    openai: {
      status: 'active',
+     // Completion lane: a plain chat-completions endpoint, one call per
+     // request.
+     lane: 'completion',
      adapter: require('./openai/adapter'),
      models: {
        speed:   pickModel(process.env.OPENAI_FAST_MODEL, 'gpt-4o-mini'),
@@ -394,6 +464,9 @@ const VENDOR_REGISTRY = {
    // chain alive. Key comes from MINIMAX_API_KEY (.env.production).
    minimax: {
      status: 'active',
+     // Completion lane: an OpenAI-compatible endpoint, one call per
+     // request.
+     lane: 'completion',
      adapter: require('./minimax/adapter'),
      models: {
        speed:   pickModel(process.env.MINIMAX_FAST_MODEL, 'MiniMax-M3'),
@@ -434,6 +507,23 @@ const VENDOR_REGISTRY = {
    // there, and that has NOT been measured.
    pi: {
      status: 'active',
+     // Completion lane — and this is the one that reads wrong at a glance,
+     // so it is worth saying plainly.
+     //
+     // Pi IS a local agent CLI: vendors/pi/adapter.js spawns the `pi`
+     // binary per request, and Pi as a product can hold a session, run
+     // tools, and read context files. That is not what this router asks
+     // it for. The adapter strips Pi to the minimum on EVERY call —
+     // --no-tools, --no-extensions, --no-skills, --no-prompt-templates,
+     // --no-context-files, --no-session (see the adapter header, where
+     // each of those flags is load-bearing). What is left is one
+     // stateless, single-shot completion.
+     //
+     // So the lane follows the CALL, not the capability: this router uses
+     // Pi as a completion vendor, and typing it 'agent' would put a
+     // tool-using multi-round-trip vendor behind a 1500-token ceiling
+     // without anything actually behaving that way.
+     lane: 'completion',
      adapter: require('./pi/adapter'),
      models: {
        speed:   pickModel(process.env.PI_FAST_MODEL, process.env.PI_MODEL, 'MiniMax-M3'),
@@ -446,6 +536,9 @@ const VENDOR_REGISTRY = {
    // ── External: DeepSeek API ────────────────────────────────────────────────
    deepseek: {
      status: 'stub',
+     // Completion lane: a plain chat-completions endpoint. Declared for
+     // completeness while the entry is a stub.
+     lane: 'completion',
      adapter: require('./deepseek/adapter'),
      models: {
        speed:   pickModel(process.env.DEEPSEEK_FAST_MODEL, 'deepseek-chat'),
@@ -458,6 +551,11 @@ const VENDOR_REGISTRY = {
    // ── Multi-channel gateway: OpenClaw (fronts multiple Pi-embedded agents) ──
    openclaw: {
      status: 'active',
+     // Agent lane: this is the gateway that fronts several Pi-embedded
+     // agents, with tools and multiple round-trips. It is the vendor the
+     // agent-lane token floor exists for — a 350-token ceiling against a
+     // 72-tool agent is how replies get truncated instead of answered.
+     lane: 'agent',
      adapter: require('./openclaw/adapter'),
      // The gateway rewrites an incomplete agent turn into a 200 whose content
      // is this string (see journal: "stopReason=length ... surfacing error to
@@ -480,6 +578,13 @@ const VENDOR_REGISTRY = {
    // header). Do not flip to 'active' until that's confirmed.
    hermes: {
      status: 'stub',
+     // Agent lane: a Tailscale-only agent gateway, same shape as openclaw
+     // — stateful, tool-using, multi-round-trip. It is a stub, so it never
+     // enters a chain (resolveVendorChainForUseCase only walks active
+     // vendors) and this declaration is currently declarative only. It is
+     // declared anyway so that flipping the status to 'active' cannot
+     // smuggle an agent-lane vendor into a completion lane.
+     lane: 'agent',
      adapter: require('./hermes/adapter'),
      models: {
        speed:   pickModel(process.env.HERMES_FAST_MODEL, 'Hermes Agent'),
@@ -841,5 +946,7 @@ module.exports = {
   DEFAULT_USE_CASE,
   // Internal-only: consumed by server-side health checks — NEVER serialise to client responses
   VENDOR_REGISTRY,
+  // Internal-only: known vendor ids for validator cross-reference
+  KNOWN_VENDOR_IDS,
   resetLaneCorpus,
 };

@@ -9,6 +9,9 @@ const DEFAULT_PROMPT_MODE = 'hybrid';
 const BUNDLED_PROMPTS_ROOT = path.resolve(__dirname, '../agent_model_files');
 const LANE_DIR = 'lanes';
 
+const CRLF = String.fromCharCode(13, 10);
+const LF = String.fromCharCode(10);
+
 /**
  * The single use-case → prompt table.
  *
@@ -133,7 +136,7 @@ class PromptComposer {
 
     const absolutePath = path.resolve(root, relativePath);
     try {
-      const content = fs.readFileSync(absolutePath, 'utf8').trim();
+      const content = fs.readFileSync(absolutePath, 'utf8').split(CRLF).join(LF).trim();
       const normalized = content.replaceAll('${PROMPTS_ROOT}', this.promptLabel);
       this.fileCache.set(cacheKey, normalized);
       return normalized;

@@ -424,9 +424,9 @@ traffic, so it is deliberately **not** part of the structural merge — it needs
   `/opt/lanonasis/mcp-core` — the memory-core service repo, deliberately NOT this router's own source
   tree). Filesystem access is sandboxed to `CODE_BASE_DIR` with path-traversal checks, PLUS a
   secret-shaped-filename denylist (`.env*`, `*.key`/`*.pem`, `id_rsa*`, `.npmrc`, `.netrc`) enforced in
-  both the path resolver AND `code.run_command`'s argument list (closes the `cat .env.production`
-  bypass — the path resolver only ever validated `cwd`, never the arguments `cat`/`grep`/`find`/etc.
-  take as parameters).
+  both the path resolver AND `code.run_command`'s argument list (closes the shell-read
+  bypass against `.env.production` — the path resolver only ever validated `cwd`,
+  never the arguments `cat`/`grep`/`find`/etc. take as parameters).
 - **`memory.*` tools** have NO offered-tools/trusted-identity gate — they dispatch directly whenever
   offered. The tool *definition itself* is the only control. `memory.write` (mutating) is therefore
   withheld by default from every question-answering use case — offered only on `repl-nlp` (explicitly

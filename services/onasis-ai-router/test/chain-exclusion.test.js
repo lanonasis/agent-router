@@ -34,7 +34,10 @@ test('no exclusion leaves the declared chain untouched', async () => {
   const scoreboard = captureScoreboard();
   const chain = new ChainExecutor({ scoreboard, logger: silentLogger });
   await assert.rejects(() => chain.run({ useCase: 'ask-ai' }));
-  assert.ok(scoreboard.seen[0].includes('openclaw'));
+  // ask-ai is a completion lane — openclaw was removed from its vendorOrder
+  // in the lane-typing refactor (Phase 5, spec §7). First vendor is now pi.
+  assert.ok(scoreboard.seen[0][0] === 'pi', 'first vendor should be pi');
+  assert.ok(!scoreboard.seen[0].includes('openclaw'), 'openclaw must not be in the chain');
 });
 
 test('an exclusion that empties the chain is not reported as a misconfiguration', async () => {

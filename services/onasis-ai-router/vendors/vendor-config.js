@@ -158,12 +158,164 @@ function resolveMaxTokens(useCase, declared, { onWarn } = {}) {
   return parsed;
 }
 
+/**
+ * The token floor for agent-lane use cases.
+ *
+ * Spec §7: a use case that routes to an agent-lane vendor (stateful,
+ * tool-using, multi-round-trip) needs room for the agent's own turn. The
+ * incident this exists for: a 350-token ceiling pointed at a 72-tool agent,
+ * which truncated every answer instead of failing loudly.
+ *
+ * `AGENT_LANE_MIN_TOKENS` moves the floor. A malformed value keeps the
+ * default and warns — a typo must not disarm the check by making it
+ * meaningless, and must never throw at boot.
+ */
+const DEFAULT_AGENT_LANE_MIN_TOKENS = 2000;
+
+function resolveAgentLaneMinTokens({ onWarn } = {}) {
+  const raw = (process.env.AGENT_LANE_MIN_TOKENS ?? '').trim();
+  if (raw === '') return DEFAULT_AGENT_LANE_MIN_TOKENS;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    onWarn?.(`AGENT_LANE_MIN_TOKENS is not a positive integer (${raw}) — keeping ${DEFAULT_AGENT_LANE_MIN_TOKENS}`);
+    return DEFAULT_AGENT_LANE_MIN_TOKENS;
+  }
+  return parsed;
+}
+
+/**
+ * Validate the lane typing of a use-case map against a vendor registry.
+ *
+ * Spec §7 of the outcome-driven routing design: a vendor declares a lane
+ * ('completion' — stateless single call, or 'agent' — stateful, tool-using,
+ * multi-round-trip), a use case declares the lane it needs, and the PAIRING
+ * is checked rather than assumed. Two rules carry the weight:
+ *
+ *   1. A completion lane may not carry an agent-lane vendor. An agent
+ *      gateway is stateful and multi-round-trip; a single stateless call is
+ *      the wrong shape for it, and pairing it with a short ceiling is how
+ *      the original truncation incident happened (a 350-token cap against a
+ *      72-tool agent).
+ *   2. An agent lane that carries an agent-lane vendor must have a token
+ *      ceiling at or above AGENT_LANE_MIN_TOKENS — the EFFECTIVE ceiling,
+ *      after any AI_MAX_TOKENS override, so an environment variable cannot
+ *      smuggle a 350-token cap past the floor.
+ *
+ * Every violation is collected rather than thrown on, so an operator sees
+ * every problem in one boot instead of one per restart.
+ *
+ * @param {object}        options
+ * @param {object}        options.useCases          use-case map, keyed by use case
+ * @param {object}        options.vendorRegistry    vendor registry
+ * @param {Set<string>}  [options.knownVendorIds]  ids a chain may name
+ * @param {number|null}  [options.minTokens]       agent-lane floor; read from the
+ *                                                 environment when null/undefined
+ * @param {function}     [options.onWarn]           receives floor-parse warnings
+ * @returns {{ valid: boolean, violations: Array<object>, floor: number }}
+ */
+function validateLaneConfiguration({
+  useCases,
+  vendorRegistry,
+  knownVendorIds = null,
+  minTokens = null,
+  onWarn,
+} = {}) {
+  const known = knownVendorIds || new Set(Object.keys(vendorRegistry || {}));
+  const floor = (typeof minTokens === 'number' && Number.isFinite(minTokens) && minTokens > 0)
+    ? minTokens
+    : resolveAgentLaneMinTokens({ onWarn });
+
+  const violations = [];
+  const add = (code, useCase, message, extra = {}) =>
+    violations.push({ code, useCase, message, ...extra });
+
+  for (const [useCase, config] of Object.entries(useCases || {})) {
+    const lane = config && config.lane;
+    /**
+ * Resolve the actual runtime chain (honours AI_VENDOR_ORDER* env overrides).
+ * The declared vendorOrder is insufficient — the env escape hatch can inject
+ * any vendor (including agent-lane ones) into a completion lane. The validator
+ * must check what the router ACTUALLY executes, not what the source says.
+ */
+const chain = resolveVendorOrder(
+  useCase,
+  config.vendorOrder,
+  { knownVendorIds: known, onWarn },
+);
+
+    // (a) The use case must declare which lane it needs.
+    if (!lane) {
+      add('use-case-lane-missing', useCase,
+        `use case "${useCase}" declares no lane — every use case must declare "completion" or "agent"`);
+    } else if (lane !== 'completion' && lane !== 'agent') {
+      add('use-case-lane-invalid', useCase,
+        `use case "${useCase}" declares an unknown lane "${lane}" — expected "completion" or "agent"`);
+    }
+
+    // (b) Every id in the chain must be a vendor this router knows.
+    // (e) Every vendor in the chain must declare a lane of its own.
+    const agentVendors = [];
+    for (const vendorId of chain) {
+      if (!known.has(vendorId)) {
+        add('unknown-vendor', useCase,
+          `use case "${useCase}" names unknown vendor "${vendorId}"`,
+          { vendor: vendorId });
+        continue;
+      }
+      const vendor = (vendorRegistry || {})[vendorId] || {};
+      if (!vendor.lane) {
+        add('vendor-lane-missing', useCase,
+          `vendor "${vendorId}" (in the chain for "${useCase}") declares no lane — every vendor must declare "completion" or "agent"`,
+          { vendor: vendorId });
+        continue;
+      }
+      if (vendor.lane !== 'completion' && vendor.lane !== 'agent') {
+        add('vendor-lane-invalid', useCase,
+          `vendor "${vendorId}" declares an unknown lane "${vendor.lane}" — expected "completion" or "agent"`,
+          { vendor: vendorId });
+        continue;
+      }
+      if (vendor.lane === 'agent') agentVendors.push(vendorId);
+    }
+
+    // (d) A completion lane may not carry an agent-lane vendor.
+    if (lane === 'completion') {
+      for (const vendorId of agentVendors) {
+        add('completion-lane-agent-vendor', useCase,
+          `use case "${useCase}" is a completion lane but its chain includes agent-lane vendor "${vendorId}" — a completion lane must be served by completion-lane vendors only`,
+          { vendor: vendorId });
+      }
+    }
+
+    // (c) An agent lane that carries an agent-lane vendor needs the floor,
+    // measured against the EFFECTIVE ceiling so no override can undercut it.
+    if (lane === 'agent' && agentVendors.length > 0) {
+      const effective = resolveMaxTokens(useCase, config.maxTokens, { onWarn });
+      if (!Number.isFinite(effective)) {
+        add('agent-lane-missing-max-tokens', useCase,
+          `use case "${useCase}" is an agent lane with agent-lane vendor(s) ${agentVendors.map((v) => `"${v}"`).join(', ')} but has no usable maxTokens ceiling — it must be at least ${floor}`,
+          { vendor: agentVendors[0] });
+      } else if (effective < floor) {
+        add('agent-lane-token-floor', useCase,
+          `use case "${useCase}" is an agent lane with agent-lane vendor(s) ${agentVendors.map((v) => `"${v}"`).join(', ')} but its effective maxTokens is ${effective}, below the agent-lane floor of ${floor} — raise maxTokens or AGENT_LANE_MIN_TOKENS`,
+          { vendor: agentVendors[0], maxTokens: effective, floor });
+      }
+    }
+  }
+
+  return { valid: violations.length === 0, violations, floor };
+}
+
 module.exports = {
+  DEFAULT_AGENT_LANE_MIN_TOKENS,
   NEVER_ENABLE,
   envSuffix,
   parseList,
   pickModel,
+  resolveAgentLaneMinTokens,
   resolveMaxTokens,
   resolveVendorOrder,
   resolveVendorStatus,
+  validateLaneConfiguration,
 };

@@ -78,10 +78,14 @@ const ROUTER_ONLY = Object.freeze([
 ]);
 const PACKAGE_ONLY = Object.freeze(['package.json', 'sync-source-of-truth.py']);
 
+const CRLF = String.fromCharCode(13, 10);
+const LF = String.fromCharCode(10);
 const sha = (p) => {
   if (!fs.existsSync(p)) return null;
-  return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex').slice(0, 16);
+  const raw = fs.readFileSync(p, 'utf8').split(CRLF).join(LF);
+  return crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16);
 };
+
 const lines = (p) => (fs.existsSync(p) ? fs.readFileSync(p, 'utf8').split('\n').length : null);
 
 function snapshot() {

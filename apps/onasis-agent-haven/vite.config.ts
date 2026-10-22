@@ -8,6 +8,14 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      // Proxy auth endpoints to the auth-gateway service
+      "/v1/auth": {
+        target: process.env.AUTH_GATEWAY_URL || "http://localhost:4000",
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
   plugins: [
     react(),

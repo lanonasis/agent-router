@@ -75,6 +75,44 @@ bun run lint
 Do not start the local router against production credentials or copy `.env`
 files into source control.
 
+## Authentication
+
+The Agent Haven UI is gated by the central Auth Gateway
+(`https://auth.lanonasis.com`).
+
+- **Sign-in** uses `POST /v1/auth/login` with `project_scope: "lanonasis-maas"`
+  and `platform: "web"`. The returned access token is kept in `localStorage`
+  under `lanonasis_access_token`; the gateway's httpOnly `lanonasis_session`
+  cookie covers SSO and returns from the hosted sign-up page.
+- **Sign-up** is delegated to `https://auth.lanonasis.com/web/login` (the
+  gateway's hosted page). There is **no** `POST /v1/auth/signup` JSON endpoint.
+- **OAuth is not enabled in this app.** The gateway only accepts
+  `auth.lanonasis.com` / `dashboard.lanonasis.com` return URIs, or a URI
+  registered for an OAuth client. Register the app in
+  `auth_gateway.oauth_clients` before adding provider buttons.
+- **Session restore** calls `GET /v1/auth/session` with the stored Bearer
+  token, then `GET /v1/auth/session/check` for a cookie-only session.
+- **Sign-out** calls `POST /v1/auth/logout` and clears the local token.
+  Cookie-only sessions use the gateway's `/web/logout`.
+
+Development goes through the Vite proxy in
+`apps/onasis-agent-haven/vite.config.ts` (`AUTH_GATEWAY_URL`, default
+`http://localhost:4000`), so no CORS setup is needed. A production build calls
+the gateway directly, so:
+
+1. Set `VITE_AUTH_GATEWAY_URL` at build time if the gateway is not
+   `https://auth.lanonasis.com`.
+2. Add the app's production origin to the gateway's `CORS_ORIGIN` list.
+3. Serve the app from a `*.lanonasis.com` origin if hosted sign-up or SSO
+   cookie restore is required (`COOKIE_DOMAIN=.lanonasis.com`).
+
+> The route guard is a UI gate, not a security boundary: the Vite bundle is
+> static. To protect the agent documentation itself, serve it behind an
+> authenticating proxy (Cloudflare Access, the Auth Gateway, etc.).
+
+The Chain Wiring page reads the router health endpoint from `VITE_ROUTER_URL`
+(default `http://localhost:8000`).
+
 ## Checks
 
 Run the generated-prompt freshness check whenever changing Agent Heaven model
