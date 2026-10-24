@@ -4,15 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import "./Login.css";
 
 const Login = () => {
-  const {
-    login,
-    loading,
-    error,
-    clearError,
-    signupUrl,
-    isLoggedIn,
-    isInitializing,
-  } = useAuth();
+  const { login, loading, error, clearError, signupUrl, isLoggedIn, isInitializing } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,19 +41,14 @@ const Login = () => {
         <div className="terminal-content">
           {/* Command line */}
           <div>
-            <span className="prompt">$</span>{" "}
-            <span className="command">lanonasis auth</span>
+            <span className="prompt">$</span> <span className="command">lanonasis auth</span>
           </div>
 
           <br />
 
           {/* Status */}
-          <div className="output success">
-            ✓ Authentication Gateway Active
-          </div>
-          <div className="output">
-            Sign in to the Lanonasis agent console
-          </div>
+          <div className="output success">✓ Authentication Gateway Active</div>
+          <div className="output">Sign in to the Lanonasis agent console</div>
 
           {/* Section title */}
           <div className="section-title">🔐 Authentication Required</div>
@@ -103,14 +90,8 @@ const Login = () => {
             </div>
 
             {/* Submit */}
-            <button
-              type="submit"
-              className={`btn${loading ? " loading" : ""}`}
-              disabled={loading}
-            >
-              <span id="submit-text">
-                {loading ? "AUTHENTICATING…" : "AUTHENTICATE"}
-              </span>
+            <button type="submit" className={`btn${loading ? " loading" : ""}`} disabled={loading}>
+              <span id="submit-text">{loading ? "AUTHENTICATING…" : "AUTHENTICATE"}</span>
             </button>
 
             {/* Message */}
@@ -136,22 +117,18 @@ const Login = () => {
           {/* Resources */}
           <div className="section-title">📚 Resources:</div>
           <div className="output">
-            • Documentation:{" "}
-            <a href="https://docs.lanonasis.com">docs.lanonasis.com</a>
+            • Documentation: <a href="https://docs.lanonasis.com">docs.lanonasis.com</a>
           </div>
           <div className="output">
             • Repository:{" "}
-            <a href="https://github.com/lanonasis/lanonasis-maas">
-              github.com/lanonasis/lanonasis-maas
-            </a>
+            <a href="https://github.com/lanonasis/onasis-agent-haven">github.com/lanonasis/onasis-agent-haven</a>
           </div>
 
           <br />
 
           {/* Blinking cursor */}
           <div>
-            <span className="prompt">$</span>{" "}
-            <span className="blink">_</span>
+            <span className="prompt">$</span> <span className="blink">_</span>
           </div>
         </div>
       </div>
