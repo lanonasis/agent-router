@@ -243,8 +243,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(normalizeUser(data.user) ?? userFromToken(accessToken));
         navigate("/agents", { replace: true });
       } catch (err) {
+        // fetch() rejects with a TypeError ("Failed to fetch") when the
+        // request never gets a readable response — most often because the
+        // gateway's CORS allow-list does not include this origin.
         const message =
-          err instanceof Error ? err.message : "Authentication failed";
+          err instanceof TypeError
+            ? `Cannot reach ${AUTH_API_BASE} from ${window.location.origin}. The auth gateway must list this origin in CORS_ORIGIN.`
+            : err instanceof Error
+            ? err.message
+            : "Authentication failed";
         setError(message);
         throw err;
       } finally {
