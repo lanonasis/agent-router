@@ -28,7 +28,6 @@ dist-ssr
 .cursor/settings.local.json
 .windsurf/settings.local.json
 .pi
-.codewhale
 
 # Service secrets (loaded directly by the onasis-ai-router.service systemd unit
 # via `dotenvx run -f services/onasis-ai-router/.env.production` at deploy path)

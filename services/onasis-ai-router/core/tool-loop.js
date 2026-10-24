@@ -321,12 +321,42 @@ class ToolLoop {
     return { ok: true };
   }
 
-  async executeToolCalls(toolCalls, req, offeredTools, useCase) {
-    const results = [];
-    for (const call of toolCalls) {
-      const result = await this.executeToolCallWithRetry(call, req, offeredTools, useCase);
-      results.push(result);
+  async executeToolCalls(toolCalls, req, offeredTools, useCase, { concurrency = 3 } = {}) {
+    const results = new Array(toolCalls.length);
+    let nextIndex = 0;
+    const active = new Set();
+
+    const runOne = async (index) => {
+      try {
+        results[index] = await this.executeToolCallWithRetry(
+          toolCalls[index], req, offeredTools, useCase,
+        );
+      } finally {
+        active.delete(index);
+      }
+    };
+
+    while (nextIndex < toolCalls.length) {
+      // Submit up to `concurrency` in parallel
+      while (nextIndex < toolCalls.length && active.size < concurrency) {
+        active.add(nextIndex);
+        runOne(nextIndex);
+        nextIndex++;
+      }
+      // Wait for at least one to finish before submitting more
+      if (active.size > 0) {
+        await Promise.race([...active].map((idx) =>
+          new Promise((resolve) => {
+            const check = () => {
+              if (!active.has(idx)) resolve();
+              else setTimeout(check, 10);
+            };
+            check();
+          }),
+        ));
+      }
     }
+
     return results;
   }
 
@@ -483,9 +513,32 @@ class ToolLoop {
       } finally {
         clearTimeout(timer);
       }
+      if (!response.ok) {
+        let errorInfo;
+        try { errorInfo = await response.json(); } catch { errorInfo = {}; }
+        // 5xx is a transport/retryable failure — throw so the retry wrapper fires.
+        // 4xx is a client error (bad request, forbidden, etc.) — not retryable.
+        if (response.status >= 500) {
+          throw Object.assign(new Error(`Memory service error ${response.status}`), {
+            statusCode: response.status,
+            responseBody: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
+          });
+        }
+        return this.formatToolPayload({
+          error: `Memory service returned ${response.status}`,
+          category: 'client_error',
+          message: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
+          status: response.status
+        });
+      }
       const result = await response.json();
       return this.formatToolPayload(result);
     } catch (error) {
+      // Re-throw HTTP-level failures (with statusCode) so the retry wrapper catches them.
+      // Only non-HTTP errors (network, timeout) are treated as final here.
+      if (error.statusCode) {
+        throw error;
+      }
       this.logger.warn('memory.search tool failed', { error: error.message });
       return JSON.stringify({ error: 'Memory search failed', message: error.message });
     }
@@ -515,6 +568,23 @@ class ToolLoop {
         } finally {
           clearTimeout(timer);
         }
+        if (!response.ok) {
+          let errorInfo;
+          try { errorInfo = await response.json(); } catch { errorInfo = {}; }
+          // 5xx is retryable — throw. 4xx is client error — return.
+          if (response.status >= 500) {
+            throw Object.assign(new Error(`Memory batch error ${response.status}`), {
+              statusCode: response.status,
+              responseBody: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
+            });
+          }
+          return this.formatToolPayload({
+            error: `Memory service returned ${response.status}`,
+            category: 'client_error',
+            message: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
+            status: response.status
+          });
+        }
         const result = await response.json();
         return this.formatToolPayload(result);
       }
@@ -529,6 +599,11 @@ class ToolLoop {
             headers: authHeaders,
             signal: controller.signal
           });
+          if (!response.ok) {
+            let errorInfo;
+            try { errorInfo = await response.json(); } catch { errorInfo = {}; }
+            throw new Error(`Memory get failed for ${id}: ${errorInfo.error || errorInfo.message || response.status}`);
+          }
           data = await response.json();
         } finally {
           clearTimeout(timer);
@@ -538,6 +613,8 @@ class ToolLoop {
 
       return this.formatToolPayload({ data: results });
     } catch (error) {
+      // Re-throw HTTP-level failures so the retry wrapper catches them.
+      if (error.statusCode) throw error;
       this.logger.warn('memory.get tool failed', { error: error.message });
       return JSON.stringify({ error: 'Memory get failed', message: error.message });
     }
@@ -566,9 +643,29 @@ class ToolLoop {
       } finally {
         clearTimeout(timer);
       }
+      if (!response.ok) {
+        let errorInfo;
+        try { errorInfo = await response.json(); } catch { errorInfo = {}; }
+        // 5xx is a transport/retryable failure — throw so the retry wrapper fires.
+        // 4xx is a client error (bad request, forbidden, etc.) — not retryable.
+        if (response.status >= 500) {
+          throw Object.assign(new Error(`Memory service error ${response.status}`), {
+            statusCode: response.status,
+            responseBody: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
+          });
+        }
+        return this.formatToolPayload({
+          error: `Memory service returned ${response.status}`,
+          category: 'client_error',
+          message: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
+          status: response.status
+        });
+      }
       const result = await response.json();
       return this.formatToolPayload(result);
     } catch (error) {
+      // Re-throw HTTP-level failures so the retry wrapper catches them.
+      if (error.statusCode) throw error;
       this.logger.warn('memory.write tool failed', { error: error.message });
       return JSON.stringify({ error: 'Memory write failed', message: error.message });
     }

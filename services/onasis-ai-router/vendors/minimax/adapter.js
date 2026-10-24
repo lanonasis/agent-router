@@ -36,6 +36,7 @@
 
 const { fetchWithRetry, healthCheckTimeoutMs } = require('../_shared/http-client');
 const { assertUsableCompletion } = require('../_shared/response-contract');
+const { sseIterator } = require('../_shared/sse-reader');
 
 const BASE_URL   = process.env.MINIMAX_BASE_URL   || 'https://api.minimax.io/v1';
 const CHAT_PATH  = process.env.MINIMAX_CHAT_PATH  || '/chat/completions';
@@ -134,6 +135,84 @@ async function chat(internalRequest, model) {
   });
 }
 
+/**
+ * Stream a chat completion through MiniMax.
+ *
+ * MiniMax follows the OpenAI SSE format. Chunks are normalised through
+ * stripThinkBlocks() so reasoning blocks never reach the client.
+ *
+ * @param {object} internalRequest
+ * @param {string} model
+ * @yields {{ content?: string, tool_calls?: Array, usage?: object }}
+ */
+async function* chatStream(internalRequest, model) {
+  if (!API_KEY) {
+    throw new Error('MINIMAX_API_KEY is not configured — MiniMax vendor unavailable');
+  }
+
+  const { messages = [], systemPrompt, temperature, maxTokens, tools } = internalRequest;
+
+  const payloadMessages = systemPrompt
+    ? [{ role: 'system', content: systemPrompt }, ...messages]
+    : messages;
+
+  const payload = {
+    model,
+    messages: payloadMessages,
+    temperature: temperature ?? 0.7,
+    max_tokens: maxTokens ?? 500,
+    stream: true,
+  };
+
+  if (Array.isArray(tools) && tools.length > 0) {
+    payload.tools = tools;
+  }
+
+  const timeoutMs = internalRequest.timeoutOverrideMs || TIMEOUT_MS;
+
+  const response = await fetchWithRetry(`${BASE_URL}${CHAT_PATH}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`,
+      'User-Agent': 'Onasis-CORE/1.0',
+    },
+    body: JSON.stringify(payload),
+    timeoutMs,
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(`MiniMax adapter: upstream returned ${response.status} — ${detail.slice(0, 200)}`);
+  }
+
+  for await (const { json } of sseIterator(response, { vendorId: 'minimax' })) {
+    const choice = json.choices?.[0];
+    if (!choice) continue;
+
+    const delta = choice.delta || {};
+
+    if (delta.content) {
+      yield { content: stripThinkBlocks(delta.content) };
+    }
+
+    // MiniMax also supports tool_calls in streaming (same as OpenAI format)
+    if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
+      yield { tool_calls: delta.tool_calls };
+    }
+
+    if (choice.finish_reason && json.usage) {
+      yield {
+        usage: {
+          prompt_tokens:     json.usage.prompt_tokens || 0,
+          completion_tokens: json.usage.completion_tokens || 0,
+          total_tokens:      json.usage.total_tokens || 0,
+        },
+      };
+    }
+  }
+}
+
 async function healthCheck() {
   if (!API_KEY) return false;
 
@@ -168,4 +247,4 @@ async function healthCheck() {
   }
 }
 
-module.exports = { chat, healthCheck, stripThinkBlocks };
+module.exports = { chat, chatStream, healthCheck, stripThinkBlocks };

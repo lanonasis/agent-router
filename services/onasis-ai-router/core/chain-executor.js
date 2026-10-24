@@ -266,6 +266,168 @@ class ChainExecutor {
       cause: lastError, useCase, attempted,
     });
   }
+
+  // ── Streaming path ─────────────────────────────────────────────────────
+
+  /**
+   * Stream a request through the vendor chain.
+   *
+   * Unlike `run()` which buffers a complete response, `stream()` yields
+   * incremental SSE-compatible chunks as each vendor produces them.
+   *
+   * Protocol:
+   *   - Each yielded chunk is { content, tool_calls, usage } matching the
+   *     shape that the server-side SSE formatter expects.
+   *   - If a vendor throws mid-stream, the next vendor in the chain is
+   *     tried. The failed vendor's partial output is NOT discarded —
+   *     instead it is treated as the request outcome (an outcome, not an
+   *     exception). The next vendor starts from the same request.
+   *   - A `finish` chunk with { finish_reason: 'stop' } is always yielded
+   *     last.
+   *
+   * @param {object}   params       — same as `run()` params minus `exclude`
+   * @param {function} onChunk      called for each yield (for observability)
+   * @yields {{ content?: string, tool_calls?: Array, usage?: object, finish_reason?: string }}
+   * @throws {VendorsExhaustedError} when no vendor in the chain has chatStream
+   */
+  async *stream({ useCase, messages, promptBundle, temperature, maxTokens, tools, deadlineAt, requestId, emitEvent }, onChunk) {
+    const declaredChain = this._resolveChain(useCase);
+
+    // Scoreboard ordering, same as run()
+    const preferred = this._scoreboard.orderChain(declaredChain);
+    const ejected = declaredChain.filter((v) => !preferred.includes(v));
+    const all = [...preferred, ...ejected];
+
+    if (all.length === 0) {
+      throw new VendorsExhaustedError('No active AI vendor available for streaming.', {
+        useCase, attempted: 0,
+      });
+    }
+
+    const context = { messages, promptBundle, temperature, maxTokens, tools, useCase, requestId, emitEvent };
+    let lastError;
+    let attempted = 0;
+
+    for (const vendor of all) {
+      const remainingMs = this._remainingMs(deadlineAt);
+      if (remainingMs < MIN_ATTEMPT_MS) {
+        this._logger.warn('Out of time before streaming remaining vendors', {
+          useCase, remainingMs, skipped: all.length - attempted,
+        });
+        yield { finish_reason: 'stop', truncated: true };
+        return;
+      }
+
+      attempted += 1;
+      const vendorId = vendor._vendorId;
+      const chatStream = vendor._adapter.chatStream;
+
+      // Skip vendors that don't implement streaming (e.g. Pi)
+      if (!chatStream || typeof chatStream !== 'function') {
+        this._logger.info(`Skipping vendor ${vendorId} for streaming — no chatStream`, { vendorId });
+        continue;
+      }
+
+      try {
+        this._logger.info(`Streaming on vendor ${vendorId}`, { vendorId, attempt: attempted });
+        // Clamp budget to remaining caller wall-clock
+        const configuredMs = parseInt(process.env[`${vendorId.toUpperCase().replace(/-/g, '_')}_TIMEOUT_MS`] || '30000', 10);
+        const budgetMs = Math.min(configuredMs, remainingMs);
+
+        const internalRequest = {
+          messages,
+          systemPrompt: promptBundle.systemPromptForVendor(vendorId),
+          temperature,
+          maxTokens,
+          tools,
+          useCase,
+          errorSentinels: VENDOR_REGISTRY[vendorId]?.errorSentinels,
+          // Forward the abort signal so adapters can cancel HTTP calls on client disconnect.
+          externalSignal: params?.abortSignal,
+        };
+
+        if (Number.isFinite(budgetMs)) {
+          internalRequest.timeoutOverrideMs = budgetMs;
+        }
+
+        let gotChunk = false;
+        let gotContent = false;
+        const streamStart = Date.now();
+        for await (const chunk of vendor._adapter.chatStream(internalRequest, vendor._model)) {
+          gotChunk = true;
+          if (chunk.content) gotContent = true;
+          if (onChunk) onChunk(chunk, vendorId);
+          yield chunk;
+        }
+
+        // If we got content from streaming, emit a finish marker
+        if (gotChunk) {
+          yield { finish_reason: 'stop' };
+        }
+
+        this._scoreboard.recordSuccess(vendorId, Date.now() - streamStart);
+        return; // Success — stop the chain
+      } catch (err) {
+        // Fix #1: Once we've sent any content to the client, falling back to
+        // the next vendor would duplicate it on the wire — SSE has no retract
+        // primitive. If content was actually streamed, fail hard instead of
+        // falling back. If we failed before sending anything, fallback is safe.
+        if (gotContent) {
+          this._logger.error(`Vendor ${vendorId} failed after streaming content; cannot fall back`, {
+            vendorId, error: err.message,
+          });
+          yield {
+            _fallback: true,
+            error: `Streaming vendor ${vendorId} failed mid-response. Last known content is on screen.`,
+          };
+          return; // Stop the chain — cannot safely retry
+        }
+
+        if (emitEvent) {
+          void emitEvent({
+            kind: 'stream_vendor_failure',
+            requestId,
+            vendor: vendorId,
+            model: vendor._model,
+            durationMs: Date.now() - streamStart,
+            success: false,
+            error: String(err.message || 'stream vendor failure').slice(0, 512),
+            occurredAt: new Date().toISOString(),
+          });
+        }
+        // Fix #3: use streamStart instead of undefined context._startedAt
+        this._scoreboard.recordFailure(vendorId, err, Date.now() - streamStart);
+        lastError = err;
+        this._logger.warn(`Stream vendor ${vendorId} failed before sending content, trying next`, {
+          vendorId: vendorId,
+          error: err.message,
+        });
+      }
+    }
+
+    // No vendor could stream — fall back to buffered response if possible
+    this._logger.warn('All vendors failed streaming, falling back to buffered response', {
+      useCase, error: lastError?.message,
+    });
+
+    // Emit a fallback indicator so the client knows streaming failed
+    yield {
+      _fallback: true,
+      error: lastError?.message || 'All streaming vendors failed',
+    };
+
+    // Now try the non-streaming path (the existing run() method)
+    // We'll yield a special signal that the caller can use to switch modes
+    try {
+      const buffered = await this.run(context);
+      // The buffered result will be converted to SSE by the router layer
+      yield { _buffered: true, response: buffered.adapterResponse };
+    } catch (bufferedErr) {
+      throw new VendorsExhaustedError('All AI vendors exhausted — no response available', {
+        cause: lastError || bufferedErr, useCase, attempted,
+      });
+    }
+  }
 }
 
 module.exports = { ChainExecutor, VendorsExhaustedError };

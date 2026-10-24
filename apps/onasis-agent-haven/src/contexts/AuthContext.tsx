@@ -19,8 +19,10 @@ export const AUTH_TOKEN_KEY = "lanonasis_access_token";
 /**
  * Project scope presented to the auth gateway. This is the same default the
  * gateway's own /web/login page uses (see auth-gateway web.routes.ts).
+ *
+ * Override with VITE_PROJECT_SCOPE for per-deployment scoping.
  */
-const PROJECT_SCOPE = "lanonasis-maas";
+const PROJECT_SCOPE = import.meta.env.VITE_PROJECT_SCOPE || "app_agent_haven";
 
 /**
  * Gateway origin for browser navigations (hosted login/signup and cookie
@@ -34,14 +36,16 @@ export const AUTH_GATEWAY_ORIGIN = (
 /**
  * Base URL for auth-gateway API calls.
  *
- * Development: use the Vite proxy from vite.config.ts so requests are
- * same-origin. Production: the app is a static bundle, so call the gateway
- * directly. The gateway must list this app's origin in CORS_ORIGIN.
+ * Always call the gateway directly — the Vite dev proxy targets
+ * localhost:4000 which is not the auth-gateway in any deployment.
+ *
+ * Override with VITE_AUTH_GATEWAY_URL for dev / local testing.
+ * Production bundles call https://auth.lanonasis.com by default.
+ * The gateway must list this app's origin in CORS_ORIGIN.
  */
 const AUTH_API_BASE =
-  import.meta.env.DEV && !import.meta.env.VITE_AUTH_GATEWAY_URL
-    ? ""
-    : AUTH_GATEWAY_ORIGIN;
+  import.meta.env.VITE_AUTH_GATEWAY_URL ||
+  "https://auth.lanonasis.com";
 
 export interface AuthUser {
   id?: string;

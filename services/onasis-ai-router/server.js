@@ -169,7 +169,7 @@ app.get('/', (req, res) => {
     model: openaiCompat.MODEL_ID,
     provider: openaiCompat.MODEL_OWNER,
     capabilities: {
-      streaming: false,
+      streaming: true,
       tools: true,
       memory: true
     }

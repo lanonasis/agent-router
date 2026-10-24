@@ -18,9 +18,9 @@
  * 2. The facade only translates. It does not route, retry, or pick vendors; it
  *    reshapes a request, hands it to the existing handler, and reshapes the
  *    reply. All routing behaviour stays in one place.
- * 3. Streaming is refused explicitly, not faked. `stream: true` returns a clear
- *    error until real SSE exists, because a silently non-streaming response to
- *    a client that asked to stream looks like a hang.
+ * 3. `stream: true` is forwarded to the router's streaming path. The router
+ *    emits an OpenAI-compatible SSE stream. Non-streaming callers see no
+ *    change.
  */
 
 const { CALLER_FORBIDDEN_ROLES, forbiddenRoleMessage } = require('./message-policy');
@@ -142,7 +142,6 @@ function toInternalRequest(payload) {
     // notice rather than less real). sanitizePersonaLeaks blocks known persona
     // NAMES downstream; nothing stopped a caller redefining the ROLE.
     //
-    // The rule itself lives in core/message-policy.js so this facade and the
     // native path enforce one definition. The env relaxation lever there is
     // deliberately NOT honoured here: /v1 is a new surface with no legacy
     // callers, so there is nothing to keep compatible.
@@ -158,18 +157,11 @@ function toInternalRequest(payload) {
     }
   }
 
-  if (body.stream === true) {
-    // Refused rather than silently ignored: a client that asked to stream and
-    // gets a buffered body with no error reads as a hang. See the streaming
-    // notes spec for what implementing this properly requires.
-    return {
-      status: 400,
-      error: openAIError(
-        'Streaming is not supported on this endpoint yet. Retry with "stream": false.',
-        { type: 'invalid_request_error', code: 'stream_unsupported', param: 'stream' },
-      ),
-    };
-  }
+  // stream: true is handled by the router's streaming path
+  // (routeToAIServiceStream). The toInternalRequest function only builds
+  // the non-streaming request body. The router checks req.body?.stream
+  // === true before calling this handler and routes to the streaming path
+  // directly.
 
   const internal = { messages: body.messages };
   if (typeof body.temperature === 'number') internal.temperature = body.temperature;

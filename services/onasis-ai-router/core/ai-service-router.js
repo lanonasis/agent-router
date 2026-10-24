@@ -552,14 +552,9 @@ class AIServiceRouter {
 
     // ── Tool execution + follow-up pass ───────────────────────────────────
     // Continue with the same vendor that succeeded on the first pass.
-    const toolResults = await this._toolLoop.executeToolCalls(toolCalls, req, tools, useCase);
-    // OpenAI-format tool-result messages require `tool_call_id` matching the
-    // id the assistant's own tool_calls[] declared — this was missing here
-    // (only `tool_name` was sent), which OpenAI/Anthropic/Ollama tolerate
-    // silently but MiniMax rejects with a 400 ("tool result's tool id() not
-    // found"), observed live 2026-08-20 on the memory-analysis lane. toolCalls
-    // and toolResults are the same array walked in the same order
-    // (executeToolCalls is a plain sequential for-loop), so zip by index.
+    const toolResults = await this._toolLoop.executeToolCalls(toolCalls, req, tools, useCase, { concurrency: 3 });
+    // Tool calls run concurrently (bounded at `concurrency`), so we need to
+    // preserve the original order when zipping tool_call_ids to results.
     // Soft-parsed calls (extractSoftToolCalls) carry id:'' since the model
     // never used native function-calling — synthesize one rather than send an
     // empty id, which every OpenAI-compatible vendor observed so far rejects
@@ -1484,6 +1479,11 @@ class AIServiceRouter {
         const converted = openaiCompat.toInternalRequest(req.body);
         if (converted.error) return res.status(converted.status).json(converted.error);
 
+        // ── Streaming path ───────────────────────────────────────────────
+        if (req.body?.stream === true) {
+          return this.routeToAIServiceStream(req, res);
+        }
+
         const requestedModel = (req.body && req.body.model) || openaiCompat.MODEL_ID;
         req.body = converted.body;
         req.params.service = 'ai-chat';
@@ -1631,7 +1631,332 @@ class AIServiceRouter {
       });
     });
 
+    // ── Streaming endpoint ─────────────────────────────────────────────
+    // POST /api/v1/ai-chat with stream: true in the request body.
+    // Returns an SSE stream (text/event-stream) compatible with the
+    // OpenAI chat.completions streaming spec.
+    router.post('/api/v1/ai-chat/stream',
+      this.authenticateRequest,
+      this.trackUsage,
+      (req, res) => {
+        // Check for streaming flag
+        if (req.body?.stream === true || req.query?.stream === 'true') {
+          return this.routeToAIServiceStream(req, res);
+        }
+        // Fall through to the normal (buffered) handler below
+        req.params.service = 'ai-chat';
+        return this.routeToAIService(req, res);
+      }
+    );
+
     return router;
+  }
+
+  // ── Streaming route ─────────────────────────────────────────────────────
+
+  /**
+   * Stream a chat request and emit SSE chunks directly to the response.
+   *
+   * This is the streaming counterpart to `routeToAIService()`. Instead of
+   * buffering the complete response, it walks the vendor chain via the
+   * chain executor's `stream()` generator, and writes each chunk as an SSE
+   * event to the client.
+   *
+   * @param {import('express').Request} req
+   * @param {import('express').Response} res
+   */
+  async routeToAIServiceStream(req, res) {
+    const startTime = Date.now();
+    const requestId = req.requestId || `req-${crypto.randomBytes(8).toString('hex')}`;
+
+    try {
+      // ── Build request (same shape as handleOllamaChat) ─────────────────
+      const requestStartedAt = Number.isFinite(req.requestStartedAt) ? req.requestStartedAt : Date.now();
+      const body = req.body || {};
+      const incomingMessages = Array.isArray(body.messages)
+        ? body.messages
+        : (body.prompt ? [{ role: 'user', content: String(body.prompt) }] : []);
+
+      // Policy checks
+      assertCallerRoles(incomingMessages, { logger: this.logger });
+      assertUserContent(incomingMessages);
+
+      const profile = this._profiles.resolve(req);
+      const resolvedUseCase = profile?.boundUseCase || resolveUseCaseFromRequest(req);
+      const vendorChain = resolveVendorChainForUseCase(resolvedUseCase);
+
+      if (vendorChain.length === 0) {
+        this.logger.error('No active vendor available for use case', { useCase: resolvedUseCase });
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          event: 'error',
+          data: JSON.stringify({ error: { message: 'No active AI vendor available.', code: 'NO_VENDORS' } }),
+        }));
+        return;
+      }
+
+      const { systemPrompt, maxTokens, temperature } = vendorChain[0];
+      const promptBundle = this.promptComposer.compose({
+        useCase: resolvedUseCase,
+        runtimePrompt: systemPrompt || this._fallbackSystemPrompt(),
+      });
+
+      const messages = [];
+      const prefetchBrief = req._publicSurface
+        ? ''
+        : await this._prefetch.brief(req, incomingMessages, body);
+      if (prefetchBrief) {
+        messages.push({ role: 'system', content: prefetchBrief });
+      }
+      messages.push(...incomingMessages);
+
+      const requestedTools = Array.isArray(body.tools) && body.tools.length > 0
+        ? body.tools
+        : this._toolLoop.getToolDefinitionsForUseCase(resolvedUseCase);
+      const tools = req._publicSurface
+        ? []
+        : ToolLoop.constrainToAllowed(requestedTools, profile?.allowedTools ?? null);
+
+      // ── Set SSE headers ────────────────────────────────────────────────
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no', // nginx: don't buffer SSE
+      });
+
+      // Streaming text sanitizer with carry-over buffer.
+      // A blocklisted word can straddle a chunk boundary, so we hold back
+      // the last `BUFFER_LEN` characters of each chunk and prepend them to
+      // the next one before sanitising.
+      const sanitizePersonaLeaks = require('./message-policy').sanitizePersonaLeaks;
+      const BUFFER_LEN = 32; // enough for the longest persona leak phrase
+      let carryBuffer = '';
+
+      // AbortController wired to client disconnect — forwarded to vendors
+      // so they can abort HTTP calls when the client closes the connection.
+      const abort = new AbortController();
+      res.on('close', () => { abort.abort(); });
+
+      // Periodic keepalive comment so nginx's proxy_read_timeout doesn't
+      // close the idle connection before the first token arrives.
+      let keepaliveTimer = setInterval(() => {
+        try { res.write(': keepalive\n\n'); } catch { clearInterval(keepaliveTimer); }
+      }, 15000);
+
+      // Clear keepalive on every exit path to prevent timer leaks.
+      const clearKeepalive = () => {
+        clearInterval(keepaliveTimer);
+        keepaliveTimer = null;
+      };
+
+      // Flush the carry-over buffer: the last N characters held back on each
+      // chunk must be sent at stream end or they are silently lost forever.
+      const flushCarryBuffer = () => {
+        if (carryBuffer) {
+          const remaining = carryBuffer;
+          carryBuffer = '';
+          res.write(`data: ${JSON.stringify({
+            id: eventId, object: 'chat.completion.chunk', created, model,
+            choices: [{ index: 0, delta: { content: remaining }, finish_reason: null }],
+          })}\n\n`);
+        }
+      };
+
+      const eventId = `chatcmpl-${crypto.randomBytes(12).toString('hex')}`;
+      const created = Math.floor(Date.now() / 1000);
+      const model = openaiCompat.MODEL_ID;
+
+      // ── Stream through the chain executor ──────────────────────────────
+      let usage = {};
+
+      try {
+        for await (const chunk of this._chain.stream({
+          useCase: resolvedUseCase,
+          messages,
+          promptBundle,
+          temperature,
+          maxTokens,
+          tools,
+          deadlineAt: this._deadlineAt(requestStartedAt),
+          requestId,
+          emitEvent: this._emitOpsEvent,
+          // AbortController signal — forwarded to vendor adapters so they can
+          // abort their HTTP calls when the client disconnects.
+          abortSignal: abort.signal,
+        })) {
+          // ── Buffer response fallback ─────────────────────────────────
+          if (chunk._buffered) {
+            const native = chunk.response;
+            const responseText = typeof native?.response === 'string' ? native.response : '';
+            usage = native?.usage || {};
+            if (responseText) {
+              // Sanitize buffered response text as well.
+              const safe = sanitizePersonaLeaks
+                ? sanitizePersonaLeaks(responseText)
+                : responseText;
+              res.write(`data: ${JSON.stringify({
+                id: eventId, object: 'chat.completion.chunk', created, model,
+                choices: [{ index: 0, delta: { content: safe }, finish_reason: null }],
+              })}\n\n`);
+            }
+            flushCarryBuffer();
+            clearKeepalive();
+            this._writeFinish(res, { eventId, created, model, usage });
+            return;
+          }
+
+          // ── Error marker ─────────────────────────────────────────────
+          if (chunk._fallback) {
+            res.write(`event: error
+data: ${JSON.stringify({ error: { message: chunk.error, code: 'STREAMING_FALLBACK' } })}\n\n`);
+            continue;
+          }
+
+          // ── Content chunk ────────────────────────────────────────────
+          // Fix #2: Sanitize content through the persona leak blocklist with
+          // a carry-over buffer so a blocklisted word that straddles two
+          // SSE chunks is still caught.
+          if (chunk.content && typeof chunk.content === 'string') {
+            let text = carryBuffer + chunk.content;
+            const sanitized = sanitizePersonaLeaks(text);
+            const sendText = sanitized.slice(0, sanitized.length - BUFFER_LEN);
+            carryBuffer = sanitized.slice(sanitized.length - BUFFER_LEN);
+            if (sendText) {
+              res.write(`data: ${JSON.stringify({
+                id: eventId, object: 'chat.completion.chunk', created, model,
+                choices: [{ index: 0, delta: { content: sendText }, finish_reason: null }],
+              })}\n\n`);
+            }
+          }
+
+          // ── Tool call chunk ──────────────────────────────────────────
+          if (chunk.tool_calls && Array.isArray(chunk.tool_calls) && chunk.tool_calls.length > 0) {
+            for (const tc of chunk.tool_calls) {
+              // ── Top-level name shape ──
+              if (typeof tc === 'object' && tc.name !== undefined) {
+                // Guarded: streamed tool-call arguments may be partial JSON
+                // fragments; parsing each delta as a complete object would
+                // throw. Use the whole string when it is valid JSON,
+                // otherwise fall back to the raw (potentially truncated) value.
+                let fn;
+                try {
+                  fn = typeof tc.arguments === 'string' ? JSON.parse(tc.arguments) : tc.arguments;
+                } catch {
+                  fn = tc.arguments ?? {};
+                }
+                res.write(`data: ${JSON.stringify({
+                  id: eventId, object: 'chat.completion.chunk', created, model,
+                  choices: [{ index: 0, delta: {
+                    tool_calls: [{ index: 0, id: tc.id || '', type: 'function', function: { name: tc.name, arguments: JSON.stringify(fn || {}) }}],
+                  }, finish_reason: null }],
+                })}\n\n`);
+              } else if (typeof tc === 'object' && tc.index !== undefined) {
+                // Delta tool call (OpenAI-compatible with index)
+                res.write(`data: ${JSON.stringify({
+                  id: eventId, object: 'chat.completion.chunk', created, model,
+                  choices: [{ index: 0, delta: { tool_calls: [tc] }, finish_reason: null }],
+                })}\n\n`);
+              } else if (typeof tc === 'object' && tc.function?.name !== undefined) {
+                // Full tool call object from vendor adapters (OpenAI/Anthropic
+                // chatStream yield { id, type, function: { name, arguments } }).
+                // Guarded JSON.parse — streamed arguments may be partial.
+                let fn;
+                const rawArgs = tc.function?.arguments ?? '';
+                try {
+                  fn = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;
+                } catch {
+                  fn = rawArgs;
+                }
+                res.write(`data: ${JSON.stringify({
+                  id: eventId, object: 'chat.completion.chunk', created, model,
+                  choices: [{ index: 0, delta: {
+                    tool_calls: [{ index: 0, id: tc.id || '', type: 'function', function: { name: tc.function.name, arguments: JSON.stringify(fn || {}) }}],
+                  }, finish_reason: null }],
+                })}\n\n`);
+              }
+            }
+          }
+
+          // ── Usage chunk ──────────────────────────────────────────────
+          if (chunk.usage) {
+            usage = { ...usage, ...chunk.usage };
+            res.write(`data: ${JSON.stringify({
+              id: eventId, object: 'chat.completion.chunk', created, model,
+              usage: {
+                prompt_tokens: chunk.usage.prompt_tokens || 0,
+                completion_tokens: chunk.usage.completion_tokens || 0,
+                total_tokens: chunk.usage.total_tokens || 0,
+              },
+            })}\n\n`);
+          }
+
+          // ── Finish marker ────────────────────────────────────────────
+          if (chunk.finish_reason) {
+            if (chunk.truncated) {
+              res.write(`data: ${JSON.stringify({
+                id: eventId, object: 'chat.completion.chunk', created, model,
+                choices: [{ index: 0, delta: { content: '\n\n[Response truncated due to budget exhaustion]' }, finish_reason: null }],
+              })}\n\n`);
+            }
+            flushCarryBuffer();
+            clearKeepalive();
+            this._writeFinish(res, { eventId, created, model, usage });
+            return;
+          }
+        }
+
+        // Stream completed without a finish_reason — send synthetic finish
+        flushCarryBuffer();
+        clearKeepalive();
+        this._writeFinish(res, { eventId, created, model, usage });
+
+      } catch (err) {
+        // Fix #11: Set 500 before streaming the error frame.
+        try { res.writeHead(500, { 'Content-Type': 'text/event-stream' }); } catch { /* headers already sent */ }
+        clearKeepalive();
+        flushCarryBuffer();
+        res.write(`event: error\ndata: ${JSON.stringify({ error: { message: err.message, code: 'STREAM_ERROR' } })}\n\n`);
+        res.write('data: [DONE]\n\n');
+
+        this._emitOpsEvent({
+          kind: 'request_outcome',
+          requestId,
+          vendor: 'streaming',
+          model: this.ollamaModel,
+          durationMs: Date.now() - startTime,
+          statusCode: 500,
+          success: false,
+          endpoint: req.originalUrl || req.path,
+          error: String(err.message || 'streaming failed').slice(0, 512),
+          occurredAt: new Date().toISOString(),
+        });
+      }
+
+    } catch (error) {
+      this.logger.error('Streaming request failed', { error: error.message });
+      clearKeepalive();
+      flushCarryBuffer();
+      res.write(`event: error\ndata: ${JSON.stringify({ error: { message: error.message, code: 'STREAM_REQUEST_ERROR' } })}\n\n`);
+      res.write('data: [DONE]\n\n');
+    }
+  }
+
+  /** Helper: write finish chunk + usage + [DONE] to SSE response. */
+  _writeFinish(res, { eventId, created, model, usage }) {
+    res.write(`data: ${JSON.stringify({
+      id: eventId, object: 'chat.completion.chunk', created, model,
+      choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+    })}\n\n`);
+    res.write(`data: ${JSON.stringify({
+      id: eventId, object: 'chat.completion.chunk', created, model,
+      usage: {
+        prompt_tokens: usage.prompt_tokens || 0,
+        completion_tokens: usage.completion_tokens || 0,
+        total_tokens: usage.total_tokens || 0,
+      },
+    })}\n\n`);
+    res.write('data: [DONE]\n\n');
   }
 }
 

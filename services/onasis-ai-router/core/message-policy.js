@@ -21,16 +21,91 @@
 const CALLER_FORBIDDEN_ROLES = new Set(['system', 'developer']);
 
 /**
- * Rollback lever for the native path, default OFF.
+ * Shared persona-leak blocklist and sanitizer.
  *
- * Checked live on 2026-09-03: no caller of /api/v1/ai-chat sends a system
- * message — every `role: 'system'` construction in the estate targets
- * api.openai.com or api.anthropic.com directly, not the router. So this is not
- * a compatibility shim for a known caller; it is the documented way to restore
- * previous behaviour if an unknown integration turns out to depend on it,
- * without a redeploy. It is deliberately not honoured on /v1, which is a new
- * surface with no legacy callers to protect.
+ * Exported from vendors/index.js so both the buffered path (sanitizeVendorResponse)
+ * and the streaming path (routeToAIServiceStream) share the same rules — one
+ * source of truth.  Streaming copies the logic here so it does not depend on
+ * the full response object that only exists in the buffered path.
+ *
+ * Covered shapes (observed live from gateway vendors):
+ *   "You can call me Nemotron" / "I am Nemotron" / "My name is X"
+ *   "trained by NVIDIA researchers" / "developed by OpenAI"
+ *   "running inside the OpenClaw platform"
+ *   "as an AI language model"
+ *   vendor/model names that bleed through ("NVIDIA", "MiniMax", etc.)
+ *
+ * @param {string} text
+ * @returns {string}
  */
+function sanitizePersonaLeaks(text) {
+  if (!text || typeof text !== 'string') return text;
+
+  let out = text;
+
+  const PERSONA_LEAK_BLOCKLIST = [
+    'OpenClaw', 'Nemotron', 'NVIDIA', 'Nvidia', 'nvidia',
+    'Hermes Agent', 'Hermes', 'Ollama', 'ollama', 'VortexAI', 'VortexCore',
+    'kilocode', 'Kilocode',
+    'MiniMax', 'Minimax', 'minimax',
+  ];
+
+  for (const name of PERSONA_LEAK_BLOCKLIST) {
+    out = out.replace(new RegExp(`\\b${name}\\b`, 'g'), 'Onasis');
+  }
+
+  out = out.replace(/\bMr\.?\s+Banks\b/g, 'Onasis');
+
+  out = out.replace(/\/(?:root|home)\/[^\s"'`]+/g, '[workspace]');
+  out = out.replace(/\bSeye\s+Derick\b/gi, 'the Onasis team');
+  out = out.replace(/\bDerick'?s\b/gi, "the Onasis team's");
+  out = out.replace(/\b(?:Seye|Derick)\b/g, 'the Onasis team');
+
+  out = out.replace(
+    /\b[a-zA-Z0-9_./:-]*(?:nemotron|qwen|llama|claude|mistral|deepseek|gpt)[a-zA-Z0-9_./:-]*(?::[a-z0-9-]+)?\b/gi,
+    'Onasis'
+  );
+
+  out = out.replace(
+    /\bas\s+an?\s+(?:AI|large\s+language)\s+language\s+model\b/gi,
+    'as the Onasis assistant'
+  );
+
+  out = out.replace(
+    /\b(?:trained|developed|built|created|designed|made|powered)\s+by\s+([A-Z][A-Za-z0-9_-]{1,30})\b/g,
+    (_match, name) => {
+      if (/^onasis/i.test(name)) return _match;
+      return `${_match.split(/\s+by\s+/)[0]} by Onasis`;
+    }
+  );
+
+  out = out.replace(
+    /\b(?:I am|I'm|I'm|I'm|You can call me|My name is|Call me|Called)\s+([A-Z][A-Za-z0-9_-]{1,30})\b/g,
+    (_match, name) => {
+      if (/^onasis/i.test(name)) return _match;
+      return 'I am the Onasis assistant';
+    }
+  );
+
+  return out;
+}
+
+/**
+ * Exported so both buffered and streaming paths share one blocklist.
+ * `sanitizeVendorResponse` in vendors/index.js also calls it, but that is a
+ * separate code path (it operates on a full response object).  This export
+ * is only for streaming where we only have per-chunk text.
+ */
+
+// Rollback lever for the native path, default OFF.
+//
+// Checked live on 2026-09-03: no caller of /api/v1/ai-chat sends a system
+// message — every `role: 'system'` construction in the estate targets
+// api.openai.com or api.anthropic.com directly, not the router. So this is not
+// a compatibility shim for a known caller; it is the documented way to restore
+// previous behaviour if an unknown integration turns out to depend on it,
+// without a redeploy. It is deliberately not honoured on /v1, which is a new
+// surface with no legacy callers to protect.
 function callerRolesRelaxed() {
   return String(process.env.ALLOW_CALLER_SYSTEM_MESSAGES || '').toLowerCase() === 'true';
 }
@@ -136,4 +211,5 @@ module.exports = {
   callerRolesRelaxed,
   findForbiddenRole,
   forbiddenRoleMessage,
+  sanitizePersonaLeaks,
 };

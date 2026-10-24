@@ -1,0 +1,22 @@
+{
+  "name": "@lanonasis/agent-runtime",
+  "version": "1.0.0",
+  "description": "LanguageModelV2 adapter that wraps the Onasis AI router to enable VoltAgent integration",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node test/lang-adapter.test.js"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "^1.0.0"
+  },
+  "devDependencies": {},
+  "peerDependencies": {
+    "@voltagent/core": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@voltagent/core": {
+      "optional": true
+    }
+  }
+}

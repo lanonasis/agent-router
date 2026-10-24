@@ -9,9 +9,10 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
     proxy: {
-      // Proxy auth endpoints to the auth-gateway service
+      // Proxy auth endpoints to the auth-gateway service.
+      // Default targets production; override with AUTH_GATEWAY_URL env var.
       "/v1/auth": {
-        target: process.env.AUTH_GATEWAY_URL || "http://localhost:4000",
+        target: process.env.AUTH_GATEWAY_URL || "https://auth.lanonasis.com",
         changeOrigin: true,
         secure: false,
       },

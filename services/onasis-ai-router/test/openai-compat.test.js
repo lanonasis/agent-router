@@ -48,14 +48,16 @@ test('an unknown model is a 404 model_not_found, not a silent substitution', () 
   assert.ok(!r.body);
 });
 
-test('stream: true is refused explicitly', () => {
-  // Silently returning a buffered body to a client that asked to stream reads
-  // as a hang. Refuse until real SSE exists.
+test('stream: true is allowed — handled by the router streaming path', () => {
+  // Streaming is now supported via SSE. The openai-compat layer passes
+  // stream: true through to the internal request body, and the router
+  // checks for it to route to the SSE endpoint.
   const r = c.toInternalRequest({
     model: 'lzero', stream: true, messages: [{ role: 'user', content: 'hi' }],
   });
-  assert.equal(r.status, 400);
-  assert.equal(r.error.error.code, 'stream_unsupported');
+  // Should NOT be an error — stream: true is forwarded in the body.
+  assert.ok(r.body, 'stream: true should not produce an error');
+  assert.equal(r.status, undefined, 'stream: true should not set a status');
 });
 
 test('stream: false and omitted stream both pass', () => {

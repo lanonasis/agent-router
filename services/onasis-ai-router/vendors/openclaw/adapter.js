@@ -187,4 +187,7 @@ async function healthCheck() {
   }
 }
 
-module.exports = { chat, healthCheck };
+module.exports = {
+  chat,
+  healthCheck,
+};

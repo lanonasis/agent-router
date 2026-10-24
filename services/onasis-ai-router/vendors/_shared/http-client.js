@@ -91,6 +91,7 @@ async function fetchWithRetry(url, options = {}) {
     deadlineAt,
     minRetryWindowMs = 0,
     onRetry,
+    externalSignal, // Optional external AbortSignal (e.g. client disconnect)
     ...fetchOptions
   } = options;
 
@@ -108,7 +109,11 @@ async function fetchWithRetry(url, options = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), attemptTimeoutMs);
     try {
-      const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+      // Merge timeout controller with any external signal (client disconnect)
+      const signal = externalSignal
+        ? AbortSignal.any([controller.signal, externalSignal])
+        : controller.signal;
+      const response = await fetch(url, { ...fetchOptions, signal });
       clearTimeout(timer);
 
       if (!response.ok && retryableStatuses.includes(response.status) && attempt < retries) {
