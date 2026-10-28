@@ -78,6 +78,9 @@ function createAuthMiddleware({
       ...(req.headers['authorization'] && { 'Authorization': req.headers['authorization'] }),
       ...(req.headers['x-api-key'] && { 'X-API-Key': req.headers['x-api-key'] }),
       ...(req.headers['cookie'] && { 'Cookie': req.headers['cookie'] }),
+      // The router is a surface chat concierges may use; the gateway accepts
+      // concierge user tokens only for callers that declare it.
+      'X-Lanonasis-Concierge-Audience': 'router',
       'User-Agent': 'Onasis-CORE/1.0'
     };
 

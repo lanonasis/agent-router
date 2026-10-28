@@ -36,6 +36,13 @@ const {
   DEFAULT_AUTH_BUDGET_MS,
 } = require('./middleware');
 const { ToolLoop } = require('./tool-loop');
+const {
+  isToolPassthroughUseCase,
+  assertToolPassthroughAllowed,
+  assertPassthroughTools,
+  toOpenAIToolCalls,
+  normaliseToolTranscript,
+} = require('./tool-passthrough');
 const { sanitizePublicAsk } = require('./public-ask');
 const { ChainExecutor, VendorsExhaustedError } = require('./chain-executor');
 const { createOpsEventClient } = require('./ops-event-client');
@@ -224,6 +231,10 @@ class AIServiceRouter {
         service,
         user_auth_id: req.uai?.authId,
         processing_time: processingTime,
+        // The lane the router ACTUALLY served — a profile can bind one that
+        // differs from the body's `use_case`, and the caller needs the served
+        // one, not the requested one.
+        use_case: req._resolvedUseCase || useCase,
         // Surfaced so a client can tell a finished answer from one the vendor
         // stopped mid-sentence. Only present when true — an absent flag reads
         // as "complete", which is the common case.
@@ -370,6 +381,22 @@ class AIServiceRouter {
     // matching `profile:` permission on its credential, so in practice most
     // requests continue to resolve by use case.
     const useCase = profile?.boundUseCase || resolveUseCaseFromRequest(req);
+    // Remember the lane actually served, for the response metadata. A profile
+    // can bind a lane that differs from the body's `use_case`, and the caller
+    // needs the served one.
+    req._resolvedUseCase = useCase;
+
+    // ── Caller-executed tool lane ─────────────────────────────────────────
+    // Refused before any vendor work: an unentitled request must cost nothing,
+    // and a request with no tools has nothing for this lane to do. The gate is
+    // fail-closed on the credential's resolved auth id (never a header) — see
+    // core/tool-passthrough.js for why this lane is allowlisted at all.
+    const toolPassthrough = isToolPassthroughUseCase(useCase);
+    if (toolPassthrough) {
+      assertToolPassthroughAllowed(req, { logger: this.logger });
+      assertPassthroughTools(body);
+    }
+
     // The chain executor resolves and walks the chain itself; this resolution
     // supplies only the use-case-level prompt/token config, which is identical
     // across every vendor in the chain.
@@ -394,14 +421,19 @@ class AIServiceRouter {
     // the prefetch would query with no auth headers, and a result returned to
     // an unidentified caller is attributable to nobody — exactly the case the
     // prefetch cache refuses to store. Skipping is cheaper and unambiguous.
-    const prefetchBrief = req._publicSurface
+    //
+    // The pass-through lane skips it too: its transcript is the caller's own
+    // conversation plus tool results, and this lane is several requests per
+    // user turn — paying for (and re-sending) a memory brief on every round
+    // buys context the caller's tools already provide.
+    const prefetchBrief = (req._publicSurface || toolPassthrough)
       ? ''
       : await this._prefetch.brief(req, incomingMessages, body);
     if (prefetchBrief) {
       messages.push({ role: 'system', content: prefetchBrief });
     }
 
-    messages.push(...incomingMessages);
+    messages.push(...(toolPassthrough ? normaliseToolTranscript(incomingMessages) : incomingMessages));
 
     const callerSuppliedTools = Array.isArray(body.tools) && body.tools.length > 0;
     const requestedTools = callerSuppliedTools
@@ -547,6 +579,36 @@ class AIServiceRouter {
 
       const response = this.wrapResponse(responseText, extracted);
       response.usage = adapterResponse.usage;
+      return this._noteTruncation(response, adapterResponse, { useCase, maxTokens });
+    }
+
+    // ── Caller-executed tools: return the calls, do not run them ───────────
+    // This is the whole point of the `tool-proxy` lane. The caller sent its own
+    // schemas — control-room queries, proposal writes, anything this router has
+    // no credentials or network reach for — and will execute them itself.
+    // Running them here would answer every caller-defined name with
+    // `{"error":"Unsupported tool"}` and then let the synthesis pass describe
+    // results that never existed.
+    //
+    // The offered-tools filter above has already dropped anything the model
+    // invented, so every call returned here was authorised on this request.
+    if (toolPassthrough) {
+      const response = this.wrapResponse(
+        this.cleanAssistantText(extracted.content || ''),
+        extracted
+      );
+      response.tool_calls = toOpenAIToolCalls(toolCalls);
+      response.usage = adapterResponse.usage;
+
+      this.logger.info('Returning caller-executed tool calls', {
+        request_id: req.requestId || null,
+        use_case: useCase,
+        tool_count: response.tool_calls.length,
+        tool_names: response.tool_calls.map((call) => call.function.name),
+        // No arguments, no results, no vendor identity — names are enough to
+        // answer "did the model ask for the tool we expected?".
+      });
+
       return this._noteTruncation(response, adapterResponse, { useCase, maxTokens });
     }
 
@@ -1275,6 +1337,14 @@ class AIServiceRouter {
         processing_time: metadata.processing_time,
         powered_by: 'Onasis-CORE Partnership Platform',
         partner_api_version: '2.0.0',
+        // WHICH lane served this request, as the router resolved it. A caller
+        // that asked for a specific lane needs to be able to tell whether it
+        // got it: an unrecognised `use_case` falls back to the default lane
+        // (resolveUseCaseFromRequest), so a router that is too old to know a
+        // lane answers 200 with a different lane's behaviour and no error.
+        // That silent substitution is how a tool lane that was never served
+        // still looked like a working assistant (observed 2026-10-27).
+        ...(metadata.use_case ? { use_case: metadata.use_case } : {}),
         timestamp: new Date().toISOString()
       }
     };
@@ -1683,6 +1753,25 @@ class AIServiceRouter {
 
       const profile = this._profiles.resolve(req);
       const resolvedUseCase = profile?.boundUseCase || resolveUseCaseFromRequest(req);
+
+      // The pass-through lane is buffered by contract: SSE has no chunk shape
+      // for "the model chose a tool, the caller has to run it and send the
+      // result back". Refuse before a vendor is touched rather than streaming
+      // a first pass whose calls the caller cannot answer mid-stream.
+      if (isToolPassthroughUseCase(resolvedUseCase)) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          event: 'error',
+          data: JSON.stringify({
+            error: {
+              message: `The '${resolvedUseCase}' use case does not support streaming — send the request without stream: true.`,
+              code: 'tool_passthrough_not_streamable',
+            },
+          }),
+        }));
+        return;
+      }
+
       const vendorChain = resolveVendorChainForUseCase(resolvedUseCase);
 
       if (vendorChain.length === 0) {

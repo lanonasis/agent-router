@@ -29,10 +29,17 @@ finding below was reproduced live on this host — none are theoretical.
 | 14 | OpenClaw auto-updated on every restart | high | ✅ **RESOLVED** | none — pinned at 2026.8.1 |
 | 15 | Router not OpenAI-compatible; `/` leaked provider+model | high | ✅ **RESOLVED** | deploy PR #112 (separate) |
 | 16 | PR #1 review: sandbox escape, dead verifier, prompt injection | **critical** | ✅ **RESOLVED** | native path pending plan phase 3 |
+| 20 | Merged SSE streaming path was dead on arrival (`params` undefined) | **critical** | ✅ **RESOLVED** | none (see §20) |
 
 **Every finding on this board is resolved.** OpenClaw is now pinned (#14), which
 removes the cause behind #9 and #11. The open decision is whether to test
 **2026.8.2** deliberately — it may fix what 2026.8.1 broke.
+
+> **A note on #20.** It was merged, reviewed, and still shipped broken: the
+> streaming path had no test, so nothing executed it. The review caught
+> real bugs in the code that was there; it could not catch a `ReferenceError`
+> on a path nothing ran. Findings #17–#19 are resolved but are not on this
+> board — they are in the changelog below.
 
 ---
 
@@ -835,8 +842,9 @@ free for a separately deployed L0 bridge.
 vendor/model detail `sanitizeVendorResponse()` strips from every answer.
 Replaced with branded capability metadata.
 
-**Streaming** returns `400 stream_unsupported` rather than a silent buffered
-body, which to a streaming client is indistinguishable from a hang.
+**Streaming** returned `400 stream_unsupported` rather than a silent buffered
+body, which to a streaming client is indistinguishable from a hang. *(Superseded:
+streaming is now supported — see finding #20.)*
 
 **Verified with the real `openai` SDK**, not just hand-rolled requests:
 
@@ -1020,3 +1028,72 @@ documentation. Verified: drifted `exit=1`, clean `exit=0`.
 file is a judgement call, not a mechanical one.
 
 Suite: 121 passed, 5 skipped, 0 failed.
+
+---
+
+## 20. The merged SSE streaming path was dead on arrival — RESOLVED (`8458f48`)
+
+PR #17 added the SSE streaming pipeline and was merged. It did not work.
+
+`ChainExecutor.stream()` forwarded the abort signal as `params?.abortSignal`,
+but `params` was **never declared** in that scope — it was a leftover from
+the `run()` signature. The router *does* pass `abortSignal` (it has its own
+`AbortController` for client disconnects), so every streaming request threw a
+`ReferenceError` the moment the adapter was called.
+
+Reconstructing the merged implementation and driving it with a stub vendor:
+
+```
+=== merged PR #17 (broken) ===
+CHUNK: {"_fallback":true,"error":"params is not defined"}
+THREW: VendorsExhaustedError - All AI vendors exhausted — no response available
+```
+
+The `ReferenceError` was caught by the same handler that handles vendor
+failure, so it was reported as a fallback error rather than a crash — the
+failure mode looked like "every vendor is down" instead of "this code path
+has a typo". No test covered it: the streaming path had no test at all.
+
+**The gap was a missing test, not a missing review.** PR #17 was reviewed,
+the review comments were addressed, and the path still shipped broken because
+nothing executed it end to end.
+
+### Fixed
+
+- `stream()` destructures `abortSignal` and forwards it directly.
+- A failure **after** content has streamed is now always recorded on the
+  scoreboard before the chain decides whether to fall back. Previously a
+  vendor that reliably died mid-answer was invisible to the failure tracker
+  and stayed at the head of the chain forever.
+- The client-facing mid-stream error no longer names the vendor.
+- Budget exhaustion reports `finish_reason: 'length'` (OpenAI convention)
+  rather than `'stop'`, so a truncated stream is not mistaken for a clean
+  finish.
+
+### Two stale tests that hid it
+
+**`openai-compat-http.test.js`** asserted `stream: true` returns
+`400 stream_unsupported` — the pre-streaming contract. After PR #17 made
+streaming real, that assertion sent the request to **live vendors**, which
+hung for 220s. Confirmed pre-existing on clean `origin/main` before any
+change, but the *cause* was a leftover from PR #17, so it is fixed rather
+than waived. The suite now asserts the malformed-body contract instead.
+
+**`test/lane-typing.test.js`** used `{ ...VENDOR_REGISTRY }` to build a
+mutated registry. That is a **shallow** copy, so
+`delete badRegistry.lmstudio.lane` deleted the lane from the *shared*
+registry object and silently poisoned every later test in the file. The
+symptom was a confusing "every registered vendor must declare a lane"
+failure against a config that was correct. Replaced with a deep-clone
+helper.
+
+### Coverage added
+
+| File | Tests | Covers |
+|---|---|---|
+| `test/stream-failure-handling.test.js` | 7 | Fallback before content; no re-stream after content; mid-content failure recorded; vendor identity not leaked; real latency recorded; budget exhaustion reports `length`; clean stream reports `stop`. |
+| `test/lane-startup-gate.test.js` | 7 | Boot gate passes on the shipped config; throws on a lane violation; throws on the `AI_VENDOR_ORDER_ASK_AI` bypass; lists every violation; `LANES` is the single source of truth; the registry is frozen. |
+| `test/prompt-label-stability.test.js` | 4 | The prompt label does not vary with the working directory and never leaks an absolute path. |
+
+Suite: 396 passed, 0 failed, 0 cancelled. Wall time 305s -> 13s (the hang
+was the suite's dominant cost).

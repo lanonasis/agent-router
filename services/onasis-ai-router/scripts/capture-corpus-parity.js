@@ -70,6 +70,7 @@ const ROUTER_ONLY = Object.freeze([
   'lanes/onboarding.md',
   'lanes/concise-helper.md',
   'lanes/full-assistant.md',
+  'lanes/tool-proxy.md',
   'lanes/support.md',
   'lanes/creative.md',
   'lanes/technical.md',

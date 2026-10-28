@@ -8,6 +8,20 @@
 'use strict';
 
 const { test } = require('node:test');
+
+/**
+ * Deep-clone the vendor registry.
+ *
+ * A shallow spread is NOT enough: `delete badRegistry.lmstudio.lane` on a
+ * shallow copy deletes the lane from the SHARED registry object, silently
+ * poisoning every later test in this file (and any other module holding the
+ * same registry instance). Each test that mutates the registry must clone it.
+ */
+function cloneRegistry() {
+  return Object.fromEntries(
+    Object.entries(VENDOR_REGISTRY).map(([id, vendor]) => [id, { ...vendor }]),
+  );
+}
 const assert = require('node:assert/strict');
 
 const {
@@ -235,7 +249,7 @@ test('unknown vendor id in a chain is rejected', () => {
 });
 
 test('vendor missing lane declaration is rejected', () => {
-  const badRegistry = { ...VENDOR_REGISTRY };
+  const badRegistry = cloneRegistry();
   delete badRegistry.lmstudio.lane;
   const result = validateLaneConfiguration({
     useCases: USE_CASES,
@@ -244,8 +258,83 @@ test('vendor missing lane declaration is rejected', () => {
   });
   assert.equal(result.valid, false);
   assert.ok(
-    result.violations.some((v) => v.code === 'vendor-lane-missing'),
-    'expected vendor-lane-missing violation',
+    result.violations.some((v) => v.code === 'registry-vendor-lane-missing'),
+    'expected registry-vendor-lane-missing violation',
+  );
+});
+
+test('a vendor that never appears in any chain must still declare a lane', () => {
+  // hermes, ollama, supabase-edge and deepseek never appear in a vendorOrder.
+  // Their lane declaration used to be unchecked: deleting hermes.lane would
+  // still boot cleanly. The hermes lane is deliberate — it stops a status
+  // flip from smuggling an unclassified vendor into a chain — so the guard
+  // has to be registry-wide, not chain-scoped.
+  const badRegistry = cloneRegistry();
+  delete badRegistry.hermes.lane;
+
+  const result = validateLaneConfiguration({
+    useCases: USE_CASES,
+    vendorRegistry: badRegistry,
+    knownVendorIds: KNOWN_VENDOR_IDS,
+  });
+
+  assert.equal(result.valid, false, 'an undeclared vendor must fail validation');
+  const violation = result.violations.find(
+    (v) => v.code === 'registry-vendor-lane-missing' && v.vendor === 'hermes',
+  );
+  assert.ok(violation, 'expected a registry-wide violation naming hermes');
+});
+
+test('every registered vendor declares a valid lane in the shipped config', () => {
+  const result = validateLaneConfiguration({
+    useCases: USE_CASES,
+    vendorRegistry: VENDOR_REGISTRY,
+    knownVendorIds: KNOWN_VENDOR_IDS,
+  });
+
+  const laneViolations = result.violations.filter(
+    (v) => v.code === 'registry-vendor-lane-missing' || v.code === 'registry-vendor-lane-invalid',
+  );
+  assert.deepEqual(
+    laneViolations,
+    [],
+    'every registered vendor must declare a lane',
+  );
+});
+
+test('an unknown vendor lane is rejected registry-wide', () => {
+  const badRegistry = cloneRegistry();
+  badRegistry.hermes = { ...badRegistry.hermes, lane: 'not-a-lane' };
+  const result = validateLaneConfiguration({
+    useCases: USE_CASES,
+    vendorRegistry: badRegistry,
+    knownVendorIds: KNOWN_VENDOR_IDS,
+  });
+  assert.equal(result.valid, false);
+  assert.ok(
+    result.violations.some(
+      (v) => v.code === 'registry-vendor-lane-invalid' && v.vendor === 'hermes',
+    ),
+    'expected registry-vendor-lane-invalid violation for hermes',
+  );
+});
+
+test('a registry-wide violation is reported once, not duplicated per use case', () => {
+  const badRegistry = cloneRegistry();
+  delete badRegistry.hermes.lane;
+  const result = validateLaneConfiguration({
+    useCases: USE_CASES,
+    vendorRegistry: badRegistry,
+    knownVendorIds: KNOWN_VENDOR_IDS,
+  });
+
+  const hermesViolations = result.violations.filter(
+    (v) => v.vendor === 'hermes' && String(v.code).includes('lane-missing'),
+  );
+  assert.equal(
+    hermesViolations.length,
+    1,
+    `expected exactly one hermes lane violation, got ${hermesViolations.length}`,
   );
 });
 

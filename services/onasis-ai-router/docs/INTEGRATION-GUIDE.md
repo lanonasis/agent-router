@@ -332,6 +332,7 @@ Fixed list. Pick the closest — do not invent one.
 | `ask-ai` | Quick "Ask AI" buttons, one-shot Q&A | fast (cloud-first) |
 | `landing-guide` | Onboarding/marketing page guides | fast |
 | `dashboard-assistant` | Full in-product assistant panels | fast |
+| `tool-proxy` | Caller-executed tools: model returns `tool_calls`, your app runs them | slow (multi-round) |
 | `support-chat` | Help desk / customer support conversations | fast |
 | `memory-analysis` | Memory concierge — "what do I know about X", context recall | fast |
 | `content-generation` | Marketing copy, summaries, long-form | slower (local-first) |
@@ -344,6 +345,26 @@ batch work, wrong for a chat box someone is watching.
 
 **Rule of thumb:** if a human is waiting on a spinner, use a fast lane. For an interactive assistant or
 concierge, `memory-analysis` (memory-aware) or `dashboard-assistant` (general) are the right defaults.
+
+**Caller-executed tools (`tool-proxy`).** Every other lane is router-executed: send a question, the
+router decides whether to call `memory.*`, runs it, and answers. `tool-proxy` is the inverse contract,
+for applications that own tools the router cannot reach. Send your own OpenAI-shaped `tools` array; the
+response carries `tool_calls` and the router executes **nothing**:
+
+```json
+{ "response": "", "tool_calls": [{ "id": "call_abc", "type": "function",
+  "function": { "name": "apps.list", "arguments": "{\"limit\":5}" } }] }
+```
+
+Run each call, then send the whole transcript back — including the assistant turn that declared
+`tool_calls` and one `{"role":"tool","tool_call_id":"call_abc","content":"..."}` per call — with the
+same `use_case` and the same `tools` array. Repeat until the reply has no `tool_calls`.
+
+Two constraints, both enforced server-side. The lane is **allowlisted**: the credential's resolved
+`auth_id` must appear in `TOOL_PASSTHROUGH_AUTH_IDS` (unset means nobody), and a refusal is `403
+tool_passthrough_not_authorized` with the id in the router log so an operator can provision it. It is
+also **buffered** — the streaming routes (`/api/v1/ai-chat/stream`, `/v1/chat/completions` with
+`stream: true`) refuse it with `400 tool_passthrough_not_streamable`.
 
 ---
 

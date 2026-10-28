@@ -140,17 +140,24 @@ test('MaaS-scoped credentials receive a precise OpenAI-shaped error before UAI',
   assert.equal(authCalls.length, 0, 'unsupported credentials must not be forwarded as opaque auth failures');
 });
 
-test('POST /v1/chat/completions returns OpenAI-shaped validation errors before vendor routing', async (t) => {
+test('POST /v1/chat/completions rejects a malformed body before vendor routing', async (t) => {
   if (skipIfLocalListenersUnavailable(t)) return;
+  // `stream: true` is SUPPORTED since the SSE pipeline landed (PR #17) — it
+  // routes to the streaming path. The old assertion (`stream_unsupported`)
+  // encoded the pre-streaming contract and is stale.
+  //
+  // What must still hold is that a malformed request is rejected with an
+  // OpenAI-shaped error BEFORE any vendor is contacted.
   const result = await request('/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-API-Key': 'lano_http_contract' },
-    body: JSON.stringify({ model: 'lzero', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+    body: JSON.stringify({ model: 'lzero', messages: [] }),
   });
 
   assert.equal(result.status, 400);
-  assert.equal(result.body.error.code, 'stream_unsupported');
-  assert.equal(result.body.error.param, 'stream');
+  assert.ok(result.body.error, 'expected an OpenAI-shaped error body');
+  assert.equal(typeof result.body.error.code, 'string');
+  assert.equal(typeof result.body.error.message, 'string');
 });
 
 test('unknown OpenAI model is never silently substituted', async (t) => {

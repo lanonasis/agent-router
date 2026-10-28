@@ -44,3 +44,4 @@ services/onasis-ai-router/logs/
 
 # Local Netlify folder
 .netlify
+.vercel

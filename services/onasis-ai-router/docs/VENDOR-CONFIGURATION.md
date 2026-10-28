@@ -44,6 +44,14 @@ is a mistake rather than an instruction to serve nothing.
 **Ordering does not enable.** A vendor named here is still skipped unless its
 status is active (see below) and it supports the lane.
 
+**Native-tool lanes.** A lane that declares `requiresNativeTools` (currently
+`tool-proxy`, the caller-executed tool lane) additionally skips every vendor
+that does not declare `supportsNativeTools: true`. That flag is a protocol
+fact, not a quality judgement: pi is `false` because its adapter passes
+`--no-tools` unconditionally. An override that names a non-tool vendor for such
+a lane fails lane validation at boot rather than serving a request whose tools
+the model never sees.
+
 ## Enabling and disabling vendors
 
 | Variable | Effect |

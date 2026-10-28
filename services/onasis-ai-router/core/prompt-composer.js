@@ -6,6 +6,9 @@ const path = require('path');
 const VALID_PROMPT_MODES = new Set(['runtime', 'hybrid', 'embedded']);
 const DEFAULT_PROMPT_MODE = 'hybrid';
 
+// The service root - this directory's parent. Used to make the prompt label
+// independent of the process working directory.
+const SERVICE_ROOT = path.resolve(__dirname, '..');
 const BUNDLED_PROMPTS_ROOT = path.resolve(__dirname, '../agent_model_files');
 const LANE_DIR = 'lanes';
 
@@ -31,6 +34,7 @@ const DEFAULT_USE_CASE_PROMPTS = Object.freeze({
   'landing-guide':       Object.freeze({ role: 'subagents/researcher.md', lane: 'onboarding' }),
   'ask-ai':              Object.freeze({ role: 'subagents/researcher.md', lane: 'concise-helper' }),
   'dashboard-assistant': Object.freeze({ role: 'subagents/researcher.md', lane: 'full-assistant' }),
+  'tool-proxy':          Object.freeze({ role: 'subagents/researcher.md', lane: 'tool-proxy' }),
   'support-chat':        Object.freeze({ role: 'subagents/reviewer.md',   lane: 'support' }),
   'content-generation':  Object.freeze({ role: 'subagents/researcher.md', lane: 'creative' }),
   'code-assist':         Object.freeze({ role: 'subagents/coder.md',      lane: 'technical' }),
@@ -65,7 +69,16 @@ class PromptComposer {
       process.env.PROMPT_IDENTITY_MODE ||
       process.env.OLLAMA_PROMPT_MODE
     );
-    this.promptLabel = path.relative(process.cwd(), this.promptsRoot) || this.promptsRoot;
+    // The prompt label is substituted into every composed prompt, so it must
+    // NOT depend on the process working directory. `path.relative(cwd, root)`
+    // does: the same corpus yields a different string depending on where the
+    // process was started, which made the recorded prompt baseline
+    // environment-dependent and produced false drift whenever the suite ran
+    // from a different directory than the recorder did.
+    //
+    // The label is relative to the service root (the router's own directory),
+    // which is stable for every process that loads this module.
+    this.promptLabel = path.relative(SERVICE_ROOT, this.promptsRoot) || this.promptsRoot;
     this.fileCache = new Map();
     this.laneFallbackWarned = false;
     this.roleMap = this.resolveMap(

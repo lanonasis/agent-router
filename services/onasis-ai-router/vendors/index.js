@@ -15,7 +15,8 @@
 
 const { stripToolMarkup } = require('./_shared/tool-markup');
 const path = require('path');
-const { pickModel, resolveMaxTokens, resolveVendorOrder, resolveVendorStatus } = require('./vendor-config');
+const { LANES, pickModel, resolveMaxTokens, resolveVendorOrder, resolveVendorStatus } = require('./vendor-config');
+const { TOOL_PASSTHROUGH_USE_CASE } = require('../core/tool-passthrough');
 
 // ─── Use-Case Registry ───────────────────────────────────────────────────────
 //
@@ -44,7 +45,7 @@ const USE_CASES = {
     // Completion lane (spec §7): a page-load question answered in one
     // stateless call. No agent vendor may sit in this chain — a completion
     // lane exists to be fast, and the agent gateways are neither.
-    lane: 'completion',
+    lane: LANES.COMPLETION,
     // Raised from 400 by analogy with ask-ai below, whose ceiling was measured.
     // This lane has not been sampled directly; the truncation warning in
     // _noteTruncation will say so if 1000 also turns out to be short.
@@ -63,7 +64,7 @@ const USE_CASES = {
     // one stateless call. The 350-token cap that truncated every reply here
     // in 2026-09 was the same failure this lane typing exists to prevent —
     // a low ceiling pointed at a tool-using agent.
-    lane: 'completion',
+    lane: LANES.COMPLETION,
     // Raised from 350 on 2026-09-04, after every reply to "How do I rotate my
     // API key?" came back cut mid-word.
     //
@@ -91,7 +92,7 @@ const USE_CASES = {
     description: 'Full AI assistant panel inside user dashboards',
     // Agent lane (spec §7): the chain keeps openclaw, a stateful,
     // tool-using gateway, so the ceiling has to clear the agent-lane floor.
-    lane: 'agent',
+    lane: LANES.AGENT,
     // Raised from 1200 to the agent-lane floor (2000). The chain carries an
     // agent-lane vendor, and a ceiling below the floor is a startup
     // validation error rather than a runtime surprise.
@@ -102,11 +103,52 @@ const USE_CASES = {
     vendorOrder: ['pi', 'minimax', 'openclaw', 'openai', 'anthropic', 'lmstudio'],
     streamable: true,
   },
+  // ── Caller-executed tools ─────────────────────────────────────────────────
+  // The dashboard concierge sends its own tool schemas, expects `tool_calls`
+  // back, runs them itself and returns `role: "tool"` results on the next
+  // turn. No other lane has that contract: every other lane is
+  // router-executed, and this router only ever implements memory.* / code.*.
+  //
+  // Two properties make it work, and both are enforced rather than documented:
+  //
+  //   requiresNativeTools — pi leads dashboard-assistant and its adapter
+  //     passes `--no-tools` unconditionally, so the model is never shown the
+  //     list and truthfully answers "no tools are available" (observed live
+  //     2026-10-27). Only vendors that forward `tools` and return native
+  //     calls may serve this lane; the chain is filtered on
+  //     `supportsNativeTools`, and lane validation refuses to boot a chain
+  //     that contains a vendor without it.
+  //
+  //   passthrough — handleOllamaChat returns the calls instead of running
+  //     them. Without this the caller's tools would be reported as
+  //     "Unsupported tool" even after reaching the model.
+  //
+  // Order: OpenAI-compatible vendors with native function calling first,
+  // openclaw last because its gateway owns its own agent loop and is the
+  // least faithful place to hand over caller-owned tools. `streamable: false`
+  // — SSE has no chunk shape for a tool round-trip, so the lane is buffered.
+  [TOOL_PASSTHROUGH_USE_CASE]: {
+    description: 'Caller-executed tool use: the model chooses tools the caller runs',
+    // Agent lane: one user turn becomes several requests (call -> caller runs
+    // it -> tool results -> answer), and openclaw is in the chain, so the
+    // ceiling has to clear the agent-lane floor.
+    lane: LANES.AGENT,
+    maxTokens: 2000,
+    // Decision-making, not prose. The model is choosing a function and its
+    // arguments, so inventiveness is a defect here.
+    temperature: 0.2,
+    systemPromptKey: 'tool-proxy',
+    modelLane: 'lana',
+    requiresNativeTools: true,
+    passthrough: true,
+    streamable: false,
+    vendorOrder: ['openai', 'minimax', 'anthropic', 'openclaw'],
+  },
   'support-chat': {
     description: 'Customer support and help desk conversations',
     // Completion lane (spec §7): one stateless call per turn. Support is
     // latency-sensitive and short-form, so it does not want an agent.
-    lane: 'completion',
+    lane: LANES.COMPLETION,
     // This ceiling is measured, not derived from the floor — a completion
     // lane has no agent in it to need the tokens, and the value below is
     // what the replies were actually sampled at.
@@ -123,7 +165,7 @@ const USE_CASES = {
     description: 'Marketing copy, summaries, and content creation',
     // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
     // clear the agent-lane floor.
-    lane: 'agent',
+    lane: LANES.AGENT,
     maxTokens: 2000,
     temperature: 0.85,
     systemPromptKey: 'creative',
@@ -135,7 +177,7 @@ const USE_CASES = {
      description: 'Developer and technical assistance',
      // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
      // clear the agent-lane floor.
-     lane: 'agent',
+     lane: LANES.AGENT,
      maxTokens: 2000,
      temperature: 0.2,
      systemPromptKey: 'technical',
@@ -147,7 +189,7 @@ const USE_CASES = {
      description: 'Memory intelligence pattern analysis and insights',
      // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
      // clear the agent-lane floor.
-     lane: 'agent',
+     lane: LANES.AGENT,
      maxTokens: 2000,
      temperature: 0.3,
      systemPromptKey: 'memory-intelligence',
@@ -161,7 +203,7 @@ const USE_CASES = {
      description: 'Memory intelligence tasks for the edge functions, answered in bare JSON',
      // Agent lane (spec §7): the chain keeps openclaw, so the ceiling must
      // clear the agent-lane floor.
-     lane: 'agent',
+     lane: LANES.AGENT,
      // Reached through POST /api/v1/internal/memory-analysis (core/memory-analysis.js),
      // which builds the request itself. Same budget as memory-analysis: the
      // first-choice vendor is a reasoning model whose hidden reasoning counts
@@ -179,7 +221,7 @@ const USE_CASES = {
      // clear the agent-lane floor. Raised from 1500 — the REPL's synthesis
      // pass reads tool results back, which is exactly where a short ceiling
      // truncates mid-answer.
-     lane: 'agent',
+     lane: LANES.AGENT,
      maxTokens: 2000,
      temperature: 0.2,
      systemPromptKey: 'repl-assistant',
@@ -258,6 +300,7 @@ const ALL_USE_CASES = [
   'landing-guide', 'ask-ai', 'dashboard-assistant',
   'support-chat', 'content-generation', 'code-assist',
   'memory-analysis', 'memory-analysis-json', 'repl-nlp',
+  TOOL_PASSTHROUGH_USE_CASE,
 ];
 
 const DEFAULT_CODA_MODEL =
@@ -305,6 +348,14 @@ function resolveOllamaModel(...candidates) {
 }
 
 const VENDOR_REGISTRY = {
+  // `supportsNativeTools` — can this vendor be handed `tools` and return
+  // native tool calls? It is a PROTOCOL fact, not a quality judgement: pi is
+  // false because its adapter passes `--no-tools` unconditionally, hermes and
+  // supabase-edge because they have no tool path at all. A lane that declares
+  // `requiresNativeTools` (see tool-proxy) only accepts vendors where this is
+  // true, and lane validation refuses to boot a chain that mixes in one where
+  // it is not. Every entry must declare it — see validateLaneConfiguration.
+  //
   // ── Primary: local LM Studio ───────────────────────────────────────────────
   // Added 2026-09-18, replacing ollama as the local/free vendor in every
   // vendorOrder chain below. Measured ~12x faster than ollama on this host
@@ -319,7 +370,11 @@ const VENDOR_REGISTRY = {
     status: 'active',
     // Completion lane: a plain chat-completions endpoint. One request,
     // one response, no session and no tools.
-    lane: 'completion',
+    lane: LANES.COMPLETION,
+    // The adapter forwards `tools` (see vendors/lmstudio/adapter.js); whether
+    // the loaded model calls them well is the model's concern, not the
+    // protocol's.
+    supportsNativeTools: true,
     adapter: require('./lmstudio/adapter'),
     // Model names are internal — clients never see them
     models: {
@@ -352,7 +407,8 @@ const VENDOR_REGISTRY = {
     deprecationDate: '2026-09-18',
     // Completion lane: same shape as lmstudio — a chat-completions
     // endpoint. Declared for completeness while the entry is deprecated.
-    lane: 'completion',
+    lane: LANES.COMPLETION,
+    supportsNativeTools: true,
     adapter: require('./ollama/adapter'),
     // Model names are internal — clients never see them
     models: {
@@ -417,7 +473,9 @@ const VENDOR_REGISTRY = {
     deprecationDate: '2026-08-19',
     // Completion lane: a chat-completions endpoint. Declared for
     // completeness while the entry is deprecated.
-    lane: 'completion',
+    lane: LANES.COMPLETION,
+    // No tool path: the edge function rewrites role:'tool' to 'assistant'.
+    supportsNativeTools: false,
     adapter: require('./supabase-edge/adapter'),
     models: {
       // 'auto' signals that the edge function picks the model internally
@@ -433,7 +491,8 @@ const VENDOR_REGISTRY = {
   anthropic: {
     status: 'active',
     // Completion lane: a plain messages endpoint, one call per request.
-    lane: 'completion',
+    lane: LANES.COMPLETION,
+    supportsNativeTools: true,
     adapter: require('./anthropic/adapter'),
     models: {
       speed:   pickModel(process.env.ANTHROPIC_FAST_MODEL, 'claude-3-5-haiku-latest'),
@@ -447,7 +506,8 @@ const VENDOR_REGISTRY = {
      status: 'active',
      // Completion lane: a plain chat-completions endpoint, one call per
      // request.
-     lane: 'completion',
+     lane: LANES.COMPLETION,
+     supportsNativeTools: true,
      adapter: require('./openai/adapter'),
      models: {
        speed:   pickModel(process.env.OPENAI_FAST_MODEL, 'gpt-4o-mini'),
@@ -466,7 +526,8 @@ const VENDOR_REGISTRY = {
      status: 'active',
      // Completion lane: an OpenAI-compatible endpoint, one call per
      // request.
-     lane: 'completion',
+     lane: LANES.COMPLETION,
+     supportsNativeTools: true,
      adapter: require('./minimax/adapter'),
      models: {
        speed:   pickModel(process.env.MINIMAX_FAST_MODEL, 'MiniMax-M3'),
@@ -523,7 +584,11 @@ const VENDOR_REGISTRY = {
      // Pi as a completion vendor, and typing it 'agent' would put a
      // tool-using multi-round-trip vendor behind a 1500-token ceiling
      // without anything actually behaving that way.
-     lane: 'completion',
+     lane: LANES.COMPLETION,
+     // FALSE, permanently: --no-tools is unconditional in the adapter (it runs
+     // as root on this host). A lane that needs native tools must never route
+     // here — this flag is what stops it, not a comment.
+     supportsNativeTools: false,
      adapter: require('./pi/adapter'),
      models: {
        speed:   pickModel(process.env.PI_FAST_MODEL, process.env.PI_MODEL, 'MiniMax-M3'),
@@ -538,7 +603,8 @@ const VENDOR_REGISTRY = {
      status: 'stub',
      // Completion lane: a plain chat-completions endpoint. Declared for
      // completeness while the entry is a stub.
-     lane: 'completion',
+     lane: LANES.COMPLETION,
+     supportsNativeTools: true,
      adapter: require('./deepseek/adapter'),
      models: {
        speed:   pickModel(process.env.DEEPSEEK_FAST_MODEL, 'deepseek-chat'),
@@ -555,7 +621,8 @@ const VENDOR_REGISTRY = {
      // agents, with tools and multiple round-trips. It is the vendor the
      // agent-lane token floor exists for — a 350-token ceiling against a
      // 72-tool agent is how replies get truncated instead of answered.
-     lane: 'agent',
+     lane: LANES.AGENT,
+     supportsNativeTools: true,
      adapter: require('./openclaw/adapter'),
      // The gateway rewrites an incomplete agent turn into a 200 whose content
      // is this string (see journal: "stopReason=length ... surfacing error to
@@ -584,7 +651,9 @@ const VENDOR_REGISTRY = {
      // vendors) and this declaration is currently declarative only. It is
      // declared anyway so that flipping the status to 'active' cannot
      // smuggle an agent-lane vendor into a completion lane.
-     lane: 'agent',
+     lane: LANES.AGENT,
+     // Unverified: the adapter has no tool path yet (its chat endpoint is a stub).
+     supportsNativeTools: false,
      adapter: require('./hermes/adapter'),
      models: {
        speed:   pickModel(process.env.HERMES_FAST_MODEL, 'Hermes Agent'),
@@ -594,6 +663,17 @@ const VENDOR_REGISTRY = {
      fallbackVendor: null,
    },
 };
+
+// The registry is frozen so a stray assignment cannot silently replace a
+// vendor definition at runtime — the lane contract is validated at boot
+// against this exact shape, so mutating it afterwards would invalidate the
+// check that just passed.
+//
+// The freeze is shallow on purpose: the vendor ADAPTERS stay mutable because
+// the offline verification scripts (scripts/verify-circuit-eject.js,
+// scripts/verify-fallthrough.js) swap an adapter's `chat` implementation to
+// exercise the chain without a network.
+Object.freeze(VENDOR_REGISTRY);;
 
 // Warnings from vendor-config reach the process log rather than a request
 // logger: these describe a misconfigured environment, which is an operator
@@ -639,7 +719,12 @@ function resolveVendorForUseCase(useCase) {
   const isEligible = (vendor, vendorId) =>
     vendor &&
     isVendorActive(vendorId, vendor) &&
-    vendor.capabilities.includes(useCase);
+    vendor.capabilities.includes(useCase) &&
+    // A lane that hands tool calls back to the caller can only be served by a
+    // vendor that forwards `tools` at all. Without this, the explicit chain
+    // would still start with whatever the order names — pi first on the
+    // dashboard lane — and the model would be shown nothing.
+    (!useCaseConfig.requiresNativeTools || vendor.supportsNativeTools === true);
 
   const declaredOrder = orderForUseCase(useCase, useCaseConfig);
   const ordered = Array.isArray(declaredOrder) && declaredOrder.length > 0
@@ -654,6 +739,16 @@ function resolveVendorForUseCase(useCase) {
 
   // Fallback: any active vendor if none explicitly supports this use case
   if (candidates.length === 0) {
+    // Except for a native-tools lane: "any active vendor" is how pi would be
+    // chosen for the pass-through lane, which is the exact defect it exists to
+    // prevent. Refusing is the only honest answer — the caller can retry once
+    // a tool-capable vendor is configured.
+    if (useCaseConfig.requiresNativeTools) {
+      throw new Error(
+        `No active vendor supports native tool calls for use case "${useCase}". `
+          + 'Configure a tool-capable vendor before using this lane.'
+      );
+    }
     const fallback = Object.entries(VENDOR_REGISTRY).find(([id, v]) => isVendorActive(id, v));
     if (!fallback) {
       throw new Error('No active AI vendor available. Check vendor configuration.');
@@ -714,7 +809,8 @@ function resolveVendorChainForUseCase(useCase) {
   const isEligible = (vendorConfig, vendorId) =>
     vendorConfig &&
     isVendorActive(vendorId, vendorConfig) &&
-    vendorConfig.capabilities.includes(useCase);
+    vendorConfig.capabilities.includes(useCase) &&
+    (!useCaseConfig.requiresNativeTools || vendorConfig.supportsNativeTools === true);
 
   // ── Preferred path: explicit, use-case-specific vendor order ──────────────
   // Skips vendors that are missing/deprecated/incapable rather than stopping
@@ -938,6 +1034,8 @@ function resolveUseCaseFromRequest(req) {
 }
 
 module.exports = {
+  // Lane names, so callers never re-type the string literals.
+  LANES,
   resolveVendorForUseCase,
   resolveVendorChainForUseCase,
   sanitizeVendorResponse,

@@ -19,6 +19,23 @@
  * is set. Env only overrides.
  */
 
+/**
+ * The two lanes a vendor or use case can declare.
+ *
+ * Spec §7 of the outcome-driven routing design:
+ *   'completion' — stateless, single call. One prompt in, one answer out.
+ *   'agent'      — stateful, tool-using, multi-round-trip. The vendor may
+ *                  need a token ceiling far above a single completion.
+ *
+ * Declared once so the string is not retyped across the registry, the
+ * use-case map and the validator — a typo in any one of them would
+ * silently disable a lane contract.
+ */
+const LANES = Object.freeze({
+  COMPLETION: 'completion',
+  AGENT: 'agent',
+});
+
 /** `repl-nlp` -> `REPL_NLP`, for building the per-use-case env key. */
 function envSuffix(useCase) {
   return String(useCase || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_');
@@ -230,6 +247,46 @@ function validateLaneConfiguration({
   const add = (code, useCase, message, extra = {}) =>
     violations.push({ code, useCase, message, ...extra });
 
+  // (f) Registry-wide lane declaration pass.
+  //
+  // The per-use-case loop below only walks the vendors that appear in a
+  // resolved chain. Four of the registered vendors never appear in any
+  // vendorOrder (ollama, supabase-edge, deepseek, hermes), so their lane
+  // declaration was previously unchecked: deleting `hermes.lane` today
+  // would still boot cleanly. The hermes lane in particular is deliberate —
+  // it is declared so that flipping hermes' status cannot smuggle an
+  // unclassified vendor into a chain — so it must be enforced here, not
+  // left to a chain that may never include it.
+  //
+  // This pass is deliberately separate from the in-chain check so a vendor
+  // that is both registry-wide undeclared AND in a chain is reported once
+  // per concern rather than as a confusing duplicate.
+  const registry = vendorRegistry || {};
+  for (const [vendorId, vendor] of Object.entries(registry)) {
+    const vendorLane = vendor && vendor.lane;
+    if (!vendorLane) {
+      add('registry-vendor-lane-missing', null,
+        `vendor "${vendorId}" declares no lane — every registered vendor must declare "completion" or "agent"`,
+        { vendor: vendorId });
+      continue;
+    }
+    if (vendorLane !== LANES.COMPLETION && vendorLane !== LANES.AGENT) {
+      add('registry-vendor-lane-invalid', null,
+        `vendor "${vendorId}" declares an unknown lane "${vendorLane}" — expected "completion" or "agent"`,
+        { vendor: vendorId });
+    }
+    // Every vendor must say whether it can be handed `tools` at all. A lane
+    // that requires native calls filters on this flag, so an undeclared value
+    // is indistinguishable from "false" at runtime while reading as "not
+    // considered" in review — exactly the ambiguity the lane typing exists to
+    // remove. Declaring it is cheap; guessing is not.
+    if (typeof vendor.supportsNativeTools !== 'boolean') {
+      add('registry-vendor-tools-undeclared', null,
+        `vendor "${vendorId}" does not declare supportsNativeTools — every registered vendor must declare true or false`,
+        { vendor: vendorId });
+    }
+  }
+
   for (const [useCase, config] of Object.entries(useCases || {})) {
     const lane = config && config.lane;
     /**
@@ -248,7 +305,7 @@ const chain = resolveVendorOrder(
     if (!lane) {
       add('use-case-lane-missing', useCase,
         `use case "${useCase}" declares no lane — every use case must declare "completion" or "agent"`);
-    } else if (lane !== 'completion' && lane !== 'agent') {
+    } else if (lane !== LANES.COMPLETION && lane !== LANES.AGENT) {
       add('use-case-lane-invalid', useCase,
         `use case "${useCase}" declares an unknown lane "${lane}" — expected "completion" or "agent"`);
     }
@@ -265,22 +322,20 @@ const chain = resolveVendorOrder(
       }
       const vendor = (vendorRegistry || {})[vendorId] || {};
       if (!vendor.lane) {
-        add('vendor-lane-missing', useCase,
-          `vendor "${vendorId}" (in the chain for "${useCase}") declares no lane — every vendor must declare "completion" or "agent"`,
-          { vendor: vendorId });
+        // Already reported by the registry-wide pass above (f). Do not
+        // double-report: the registry-wide violation carries the same
+        // information with a clearer message and a stable code.
         continue;
       }
-      if (vendor.lane !== 'completion' && vendor.lane !== 'agent') {
-        add('vendor-lane-invalid', useCase,
-          `vendor "${vendorId}" declares an unknown lane "${vendor.lane}" — expected "completion" or "agent"`,
-          { vendor: vendorId });
+      if (vendor.lane !== LANES.COMPLETION && vendor.lane !== LANES.AGENT) {
+        // Same as above — the registry-wide pass owns invalid lane values.
         continue;
       }
-      if (vendor.lane === 'agent') agentVendors.push(vendorId);
+      if (vendor.lane === LANES.AGENT) agentVendors.push(vendorId);
     }
 
     // (d) A completion lane may not carry an agent-lane vendor.
-    if (lane === 'completion') {
+    if (lane === LANES.COMPLETION) {
       for (const vendorId of agentVendors) {
         add('completion-lane-agent-vendor', useCase,
           `use case "${useCase}" is a completion lane but its chain includes agent-lane vendor "${vendorId}" — a completion lane must be served by completion-lane vendors only`,
@@ -290,7 +345,7 @@ const chain = resolveVendorOrder(
 
     // (c) An agent lane that carries an agent-lane vendor needs the floor,
     // measured against the EFFECTIVE ceiling so no override can undercut it.
-    if (lane === 'agent' && agentVendors.length > 0) {
+    if (lane === LANES.AGENT && agentVendors.length > 0) {
       const effective = resolveMaxTokens(useCase, config.maxTokens, { onWarn });
       if (!Number.isFinite(effective)) {
         add('agent-lane-missing-max-tokens', useCase,
@@ -302,14 +357,85 @@ const chain = resolveVendorOrder(
           { vendor: agentVendors[0], maxTokens: effective, floor });
       }
     }
+
+    // (g) A use case that requires native tool calls can only be served by
+    // vendors that forward `tools`. Checked against the RUNTIME chain, so an
+    // AI_VENDOR_ORDER override that injects pi (or any other non-tool vendor)
+    // fails at boot instead of silently routing the lane to a model that is
+    // shown no tools and truthfully answers that none exist.
+    if (config.requiresNativeTools) {
+      for (const vendorId of chain) {
+        if (!known.has(vendorId)) continue; // already reported as unknown-vendor
+        const vendor = registry[vendorId] || {};
+        if (vendor.supportsNativeTools !== true) {
+          add('use-case-vendor-cannot-call-tools', useCase,
+            `use case "${useCase}" requires native tool calls but its chain includes vendor "${vendorId}", which does not declare supportsNativeTools: true`,
+            { vendor: vendorId });
+        }
+      }
+    }
+
+    // (h) Pass-through lanes hand tool calls back to the caller. Two things
+    // follow from that contract: the lane is multi-round-trip (agent), and it
+    // is buffered (SSE has no chunk shape for "the caller runs this and sends
+    // the result back").
+    if (config.passthrough === true) {
+      if (lane !== LANES.AGENT) {
+        add('passthrough-lane-not-agent', useCase,
+          `use case "${useCase}" passes tool calls back to the caller but declares lane "${lane}" — it must be an agent lane`);
+      }
+      if (config.requiresNativeTools !== true) {
+        add('passthrough-lane-without-native-tools', useCase,
+          `use case "${useCase}" passes tool calls back to the caller but does not declare requiresNativeTools: true`);
+      }
+      if (config.streamable === true) {
+        add('passthrough-lane-streamable', useCase,
+          `use case "${useCase}" passes tool calls back to the caller and cannot be streamed — set streamable: false`);
+      }
+    }
   }
 
   return { valid: violations.length === 0, violations, floor };
 }
 
+/**
+ * Assert that a lane configuration is valid, throwing a descriptive error if
+ * it is not.
+ *
+ * Exported separately from `validateLaneConfiguration` so the boot gate can
+ * be exercised in-process: `server.js` calls `process.exit(1)` at module
+ * scope, which makes that file unimportable from a test. With this helper,
+ * the failure path is testable without spawning a child process.
+ *
+ * @param {object}        options
+ * @param {object}        options.useCases
+ * @param {object}        options.vendorRegistry
+ * @param {Set<string>}  [options.knownVendorIds]
+ * @param {number|null}  [options.minTokens]
+ * @param {function}     [options.onWarn]
+ * @returns {{ valid: boolean, violations: Array<object>, floor: number }}
+ * @throws {Error} when the configuration violates a lane contract
+ */
+function assertLaneConfiguration(options = {}) {
+  const result = validateLaneConfiguration(options);
+  if (result.valid) return result;
+
+  const detail = result.violations
+    .map((v) => `  [${v.code}] ${v.message}`)
+    .join('\n');
+  const error = new Error(
+    `lane-typing validation failed at startup (${result.violations.length} violation(s)):\n${detail}`,
+  );
+  error.violations = result.violations;
+  error.floor = result.floor;
+  throw error;
+}
+
 module.exports = {
   DEFAULT_AGENT_LANE_MIN_TOKENS,
+  LANES,
   NEVER_ENABLE,
+  assertLaneConfiguration,
   envSuffix,
   parseList,
   pickModel,

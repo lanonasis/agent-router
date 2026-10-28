@@ -184,6 +184,10 @@
       "present": true
     },
     {
+      "path": "lanes/tool-proxy.md",
+      "present": true
+    },
+    {
       "path": "lanes/support.md",
       "present": true
     },

@@ -329,6 +329,13 @@ Body: {
 | `support-chat`        | Customer support widgets        |
 | `content-generation`  | Copy / summary generation       |
 | `code-assist`         | Dev tooling / code chat         |
+| `tool-proxy`          | Caller-executed tools — the model returns `tool_calls`, your app runs them |
+
+`tool-proxy` is the inverse of every other lane: the router returns the model's
+tool calls instead of executing them, so the caller owns the tools. It is
+allowlisted (`TOOL_PASSTHROUGH_AUTH_IDS`, matched on the credential's resolved
+auth id), buffered, and requires caller-supplied `tools`. See
+`docs/INTEGRATION-GUIDE.md` §4 for the round-trip contract.
 
 ### Client-side integration pattern
 

@@ -13,24 +13,21 @@ require('dotenv').config();
 
 // ── Phase 5: startup lane-typing validation (spec §7) ──
 // Fails fast if the shipped configuration violates lane contracts.
-const { validateLaneConfiguration } = require('./vendors/vendor-config');
+//
+// `assertLaneConfiguration` throws with a formatted, actionable message;
+// the process-level exit lives here so the validation itself stays
+// importable and testable from a unit test.
+const { assertLaneConfiguration } = require('./vendors/vendor-config');
 const { USE_CASES, VENDOR_REGISTRY } = require('./vendors');
-const { valid: laneOk, violations } = validateLaneConfiguration({
-  useCases: USE_CASES,
-  vendorRegistry: VENDOR_REGISTRY,
-});
-if (!laneOk) {
-  const msg = violations
-    .map((v) => `[${v.code}] ${v.message}`)
-    .join('\n    ');
-  console.error(
-    'FATAL: lane-typing validation failed at startup (%d violation(s)):\n    %s',
-    violations.length,
-    msg,
-  );
+try {
+  assertLaneConfiguration({
+    useCases: USE_CASES,
+    vendorRegistry: VENDOR_REGISTRY,
+  });
+} catch (error) {
+  console.error('FATAL: %s', error.message);
   process.exit(1);
 }
-
 
 const app = express();
 // Keep fallback aligned with production systemd defaults to avoid local port collisions.

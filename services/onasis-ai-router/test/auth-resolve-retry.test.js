@@ -397,3 +397,17 @@ test('no internal detail leaks into a 5xx-driven 503', async () => {
     await gw.close();
   }
 });
+
+test('resolve declares the router as a concierge audience', async () => {
+  const gw = await startGateway(() => ({ status: 200, body: OK_BODY }));
+  try {
+    const { nexted } = await runAuth(
+      { authGatewayUrl: gw.url, authTimeoutMs: 2000, authBudgetMs: 6000 },
+      { headers: { authorization: 'Bearer a.b.c' } }
+    );
+    assert.equal(nexted, true);
+    assert.equal(gw.hits[0].headers['x-lanonasis-concierge-audience'], 'router');
+  } finally {
+    await gw.close();
+  }
+});

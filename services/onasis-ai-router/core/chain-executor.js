@@ -290,7 +290,7 @@ class ChainExecutor {
    * @yields {{ content?: string, tool_calls?: Array, usage?: object, finish_reason?: string }}
    * @throws {VendorsExhaustedError} when no vendor in the chain has chatStream
    */
-  async *stream({ useCase, messages, promptBundle, temperature, maxTokens, tools, deadlineAt, requestId, emitEvent }, onChunk) {
+  async *stream({ useCase, messages, promptBundle, temperature, maxTokens, tools, deadlineAt, requestId, emitEvent, abortSignal }, onChunk) {
     const declaredChain = this._resolveChain(useCase);
 
     // Scoreboard ordering, same as run()
@@ -314,7 +314,9 @@ class ChainExecutor {
         this._logger.warn('Out of time before streaming remaining vendors', {
           useCase, remainingMs, skipped: all.length - attempted,
         });
-        yield { finish_reason: 'stop', truncated: true };
+        // Use 'length' (OpenAI convention) for truncation so clients can
+        // distinguish budget exhaustion from a clean finish (finish_reason: 'stop').
+        yield { finish_reason: 'length', truncated: true };
         return;
       }
 
@@ -327,6 +329,11 @@ class ChainExecutor {
         this._logger.info(`Skipping vendor ${vendorId} for streaming — no chatStream`, { vendorId });
         continue;
       }
+
+      // Declare above try so catch can reference them (let/const are block-scoped).
+      let gotChunk = false;
+      let gotContent = false;
+      let streamStart = Date.now();
 
       try {
         this._logger.info(`Streaming on vendor ${vendorId}`, { vendorId, attempt: attempted });
@@ -343,16 +350,12 @@ class ChainExecutor {
           useCase,
           errorSentinels: VENDOR_REGISTRY[vendorId]?.errorSentinels,
           // Forward the abort signal so adapters can cancel HTTP calls on client disconnect.
-          externalSignal: params?.abortSignal,
+          externalSignal: abortSignal,
         };
 
         if (Number.isFinite(budgetMs)) {
           internalRequest.timeoutOverrideMs = budgetMs;
         }
-
-        let gotChunk = false;
-        let gotContent = false;
-        const streamStart = Date.now();
         for await (const chunk of vendor._adapter.chatStream(internalRequest, vendor._model)) {
           gotChunk = true;
           if (chunk.content) gotContent = true;
@@ -372,17 +375,10 @@ class ChainExecutor {
         // the next vendor would duplicate it on the wire — SSE has no retract
         // primitive. If content was actually streamed, fail hard instead of
         // falling back. If we failed before sending anything, fallback is safe.
-        if (gotContent) {
-          this._logger.error(`Vendor ${vendorId} failed after streaming content; cannot fall back`, {
-            vendorId, error: err.message,
-          });
-          yield {
-            _fallback: true,
-            error: `Streaming vendor ${vendorId} failed mid-response. Last known content is on screen.`,
-          };
-          return; // Stop the chain — cannot safely retry
-        }
 
+        // Always record failure on scoreboard before deciding what to do.
+        // This prevents a vendor that reliably dies mid-answer from being
+        // invisible to the failure-tracking logic.
         if (emitEvent) {
           void emitEvent({
             kind: 'stream_vendor_failure',
@@ -395,11 +391,21 @@ class ChainExecutor {
             occurredAt: new Date().toISOString(),
           });
         }
-        // Fix #3: use streamStart instead of undefined context._startedAt
         this._scoreboard.recordFailure(vendorId, err, Date.now() - streamStart);
         lastError = err;
-        this._logger.warn(`Stream vendor ${vendorId} failed before sending content, trying next`, {
-          vendorId: vendorId,
+        this._logger.error(`Streaming vendor failed: ${err.message}`, { vendorId, error: err.message });
+
+        if (gotContent) {
+          // Do NOT include vendorId in client-facing error — breaks no-vendor-identity rule.
+          yield {
+            _fallback: true,
+            error: 'Streaming failed after content was sent. Last known content is on screen.',
+          };
+          return; // Stop the chain — cannot safely retry
+        }
+
+        this._logger.warn(`Stream vendor failed before sending content, trying next`, {
+          vendorId,
           error: err.message,
         });
       }

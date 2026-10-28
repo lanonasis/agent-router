@@ -126,8 +126,17 @@ function vendorToNodeStatus(vh: VendorHealth | undefined): NodeStatus {
 /**
  * Fetch live chain topology from the AI router's /health endpoint.
  * Falls back to static defaults on error.
+ *
+ * `routerUrl` defaults to `VITE_ROUTER_URL` (set in .env or build args),
+ * which prevents snapshots built without that env from pointing browsers
+ * at `localhost:8000` — a dead end that breaks every viewer's request.
  */
-export async function fetchChainTopology(routerUrl = 'http://localhost:8000'): Promise<ChainTopology> {
+const DEFAULT_ROUTER_URL =
+  typeof import.meta !== 'undefined' && import.meta.env?.VITE_ROUTER_URL
+    ? import.meta.env.VITE_ROUTER_URL
+    : 'http://localhost:8000';
+
+export async function fetchChainTopology(routerUrl = DEFAULT_ROUTER_URL): Promise<ChainTopology> {
   const topology = structuredClone(DEFAULT_TOPOLOGY);
   topology.verifiedAt = new Date().toISOString();
 

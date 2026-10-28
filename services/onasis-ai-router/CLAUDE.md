@@ -158,6 +158,9 @@ landing-guide, ask-ai, dashboard-assistant, support-chat, memory-analysis
 
 content-generation, code-assist, repl-nlp
     → minimax -> pi -> openclaw -> openai -> anthropic -> lmstudio   (batch/latency-tolerant)
+
+tool-proxy   (caller-executed tools — see "Tool safety")
+    → openai -> minimax -> anthropic -> openclaw   (native-tool vendors only)
 ```
 
 **2026-09-18: `ollama` replaced by `lmstudio` as the local/free last-resort vendor** in every
@@ -416,6 +419,18 @@ traffic, so it is deliberately **not** part of the structural merge — it needs
 
 ## Tool safety
 
+- **Pass-through lane (`tool-proxy`) — added 2026-10-28.** Some callers own tools this router cannot
+  reach (the dashboard concierge's control-room reads and proposal writes, for example). On this lane
+  the router RETURNS the model's `tool_calls` instead of executing them, and the caller runs them and
+  sends `role: "tool"` results back on the next request. Three properties are enforced, not documented:
+  (1) only vendors declaring `supportsNativeTools: true` may serve it — pi is `false` because its
+  adapter passes `--no-tools` unconditionally, which is exactly why `dashboard-assistant` answered "no
+  tools are available" on 2026-10-27; lane validation refuses to boot a chain containing a non-tool
+  vendor, including via `AI_VENDOR_ORDER`; (2) the credential's resolved `auth_id` must be listed in
+  `TOOL_PASSTHROUGH_AUTH_IDS` — unset means nobody, and the refusal logs the id; (3) the lane is
+  buffered, so the streaming routes refuse it. A request with no caller `tools` is refused (`400
+  tools_required`) rather than falling back to `memory.*`, because the fallback would reproduce the
+  original defect silently. Code: `core/tool-passthrough.js`.
 - **`code.*` tools** (`code.read`, `code.write`, `code.run_command`, `code.scan_dependencies`,
   `code.find_related`) — NOT offered by default (`getCodeToolDefinitions()`, separate from
   `getToolDefinitions()`). Require ALL of: explicitly offered in this specific request's `tools` array,
