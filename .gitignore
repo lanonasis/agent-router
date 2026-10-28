@@ -44,4 +44,19 @@ services/onasis-ai-router/logs/
 
 # Local Netlify folder
 .netlify
+
+# Local Vercel folder (build output of the Vercel deployment)
 .vercel
+
+# ── One package manager: bun ───────────────────────────────────────────────
+# bun.lock at the repository root is the ONLY lockfile — it covers every
+# workspace. Three things used to drift here and are now excluded so they
+# cannot come back:
+#   package-lock.json  — npm, a second and divergent dependency graph
+#   bun.lockb          — bun's binary lockfile, redundant with bun.lock
+#   apps/*/bun.lock     — orphaned; bun writes the ROOT bun.lock even when
+#                         run from inside a workspace member
+package-lock.json
+bun.lockb
+**/bun.lock
+!/bun.lock

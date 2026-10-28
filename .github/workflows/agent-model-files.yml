@@ -20,5 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # bun is the only package manager in this repo. The version is pinned to
+      # the one the lockfile was generated with, avoiding unreviewed resolver
+      # changes from an unpinned latest Bun.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+      # --frozen-lockfile is the guard that matters: it fails if bun.lock has
+      # drifted from package.json (a stale lockfile once shipped here, missing
+      # the packages/agent-runtime workspace). `bun run` alone would not catch it.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
       - name: Verify Agent Heaven derived prompt files
-        run: npm run check:agent-model-files
+        run: bun run check:agent-model-files

@@ -16,5 +16,9 @@
     "router:dev": "nodemon services/onasis-ai-router/server.js",
     "check:agent-model-files": "python3 packages/agent-model-files/sync-source-of-truth.py --check && python3 packages/agent-model-files/sync-source-of-truth.py --check --output-dir apps/onasis-agent-haven/docs/agent_model_files"
   },
-  "packageManager": "bun"
+  "overrides": {
+    "postcss-selector-parser": "^6.1.5",
+    "qs": "^6.16.2"
+  },
+  "packageManager": "bun@1.4.3"
 }

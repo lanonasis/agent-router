@@ -6,7 +6,7 @@
 
 import { useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { AgentDraft, DEFAULT_DRAFT } from '@/lib/agentDraftUtils';
+import { AgentDraft, AgentDraftInput, DEFAULT_DRAFT } from '@/lib/agentDraftUtils';
 import { AGENT_TEMPLATES, AgentTemplate } from '@/data/agentTemplates';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -23,13 +23,13 @@ import {
 import { Sparkles } from 'lucide-react';
 
 interface Props {
-  form: UseFormReturn<AgentDraft>;
+  form: UseFormReturn<AgentDraftInput, unknown, AgentDraft>;
   activeTemplateId: string;
   onTemplateApplied: (id: string) => void;
 }
 
 /** Check if the form has meaningful user content beyond defaults */
-function formHasContent(draft: AgentDraft): boolean {
+function formHasContent(draft: AgentDraftInput): boolean {
   return !!(
     draft.name ||
     draft.slug ||

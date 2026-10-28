@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { AgentDraft } from '@/lib/agentDraftUtils';
+import { AgentDraft, AgentDraftInput } from '@/lib/agentDraftUtils';
 
 const AVAILABLE_SHARED_DOCS = [
   'SOUL.md',
@@ -17,7 +17,7 @@ const AVAILABLE_SHARED_DOCS = [
 ];
 
 interface Props {
-  form: UseFormReturn<AgentDraft>;
+  form: UseFormReturn<AgentDraftInput, unknown, AgentDraft>;
 }
 
 export default function AgentFormFields({ form }: Props) {

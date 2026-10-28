@@ -1,0 +1,78 @@
+name: Dependency consistency
+
+# Guards the two places this repo drifted without anything noticing:
+#
+#   1. bun.lock drifting from package.json. A stale lockfile shipped here once
+#      — it was missing the packages/agent-runtime workspace, so
+#      `bun install --frozen-lockfile` failed. Nothing noticed because no CI
+#      step ever installed anything.
+#
+# The root package.json also pins two transitive security fixes: qs 6.16.2
+# (Express 4's declared ~6.15.1 range excludes the fixed release) and
+# postcss-selector-parser 6.1.5 (@tailwindcss/typography pins vulnerable 6.0.10).
+# `bun audit` below makes sure those overrides and the rest of the graph stay
+# clean as advisories change.
+#
+#   2. zod and @hookform/resolvers disagreeing about the shape of a schema
+#      failure. zod v4 removed ZodError.errors, which resolvers v3 reads, so
+#      the pair throws instead of returning field errors. That combination
+#      shipped once: the app still built (zod is only used at build time) and
+#      the router's tests stayed green, so the break only surfaced when a
+#      person opened the Agent create page.
+#
+# The lockfile is the single source of truth for the dependency graph — there
+# is no package-lock.json, and bun writes the root bun.lock even when run from
+# inside a workspace member.
+
+on:
+  pull_request:
+    paths:
+      - 'bun.lock'
+      - 'package.json'
+      - 'apps/**/package.json'
+      - 'apps/onasis-agent-haven/src/lib/agentDraftUtils.ts'
+      - 'apps/onasis-agent-haven/scripts/**'
+      - 'services/**/package.json'
+      - 'packages/**/package.json'
+      - '.github/workflows/dependency-consistency.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'bun.lock'
+      - 'package.json'
+      - 'apps/**/package.json'
+      - 'apps/onasis-agent-haven/src/lib/agentDraftUtils.ts'
+      - 'apps/onasis-agent-haven/scripts/**'
+      - 'services/**/package.json'
+      - 'packages/**/package.json'
+      - '.github/workflows/dependency-consistency.yml'
+
+jobs:
+  lockfile-and-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # bun is the only package manager in this repo. The version is pinned to
+      # the one the lockfile was generated with, so unpinned "latest" cannot
+      # silently change dependency resolution semantics.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+
+      # Node 24 strips TypeScript types natively, which is how the schema check
+      # imports the real .ts schema. Pinned to match the local toolchain.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # The guard that matters: this fails if bun.lock has drifted from
+      # package.json. `bun run` on its own would not catch it.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Audit the locked dependency graph
+        run: bun audit
+
+      - name: Verify the agent draft schema still validates
+        run: bun run --cwd apps/onasis-agent-haven check:schema

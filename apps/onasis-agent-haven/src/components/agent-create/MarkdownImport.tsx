@@ -4,11 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Upload, ClipboardPaste } from 'lucide-react';
-import { AgentDraft } from '@/lib/agentDraftUtils';
+import { AgentDraft, AgentDraftInput } from '@/lib/agentDraftUtils';
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
-  form: UseFormReturn<AgentDraft>;
+  form: UseFormReturn<AgentDraftInput, unknown, AgentDraft>;
   pastedMarkdown: string;
   onPastedMarkdownChange: (md: string) => void;
 }

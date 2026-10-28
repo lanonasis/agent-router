@@ -103,8 +103,8 @@ if [ ! -f "package.json" ]; then
   }
 }
 EOF
-    echo "📦 Installing npm dependencies..."
-    npm install > /dev/null 2>&1 || true
+    echo "📦 Installing dependencies (bun)..."
+    bun install > /dev/null 2>&1 || true
 fi
 
 # Summary

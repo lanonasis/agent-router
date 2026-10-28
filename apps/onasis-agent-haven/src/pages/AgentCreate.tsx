@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, RotateCcw, FolderOpen } from 'lucide-react';
-import { AgentDraft, DEFAULT_DRAFT, agentDraftSchema, loadDrafts, SavedDraft } from '@/lib/agentDraftUtils';
+import { AgentDraft, AgentDraftInput, DEFAULT_DRAFT, agentDraftSchema, loadDrafts, SavedDraft } from '@/lib/agentDraftUtils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AgentFormFields from '@/components/agent-create/AgentFormFields';
@@ -17,7 +17,7 @@ const AgentCreate = () => {
   const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState('blank');
 
-  const form = useForm<AgentDraft>({
+  const form = useForm<AgentDraftInput, unknown, AgentDraft>({
     resolver: zodResolver(agentDraftSchema),
     defaultValues: DEFAULT_DRAFT,
     mode: 'onChange',

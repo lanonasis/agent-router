@@ -26,7 +26,10 @@ export const agentDraftSchema = z.object({
   sharedDocs: z.array(z.string()).default(['SOUL.md', 'policies.md', 'IDENTITY-LAYER.md']),
 });
 
-export type AgentDraft = z.infer<typeof agentDraftSchema>;
+// The form edits schema input (defaults may not have been applied yet); saved
+// drafts and generated documents use the parsed output (with defaults applied).
+export type AgentDraftInput = z.input<typeof agentDraftSchema>;
+export type AgentDraft = z.output<typeof agentDraftSchema>;
 
 export const DEFAULT_DRAFT: AgentDraft = {
   name: '',
@@ -44,7 +47,7 @@ export const DEFAULT_DRAFT: AgentDraft = {
 
 // ── Markdown generation ────────────────────────────────────────────────
 
-export function generateMarkdown(draft: AgentDraft): string {
+export function generateMarkdown(draft: AgentDraftInput): string {
   const traits = parseTraits(draft.traits || '');
   const traitsBlock = traits.length
     ? traits.map(t => `- ${t}`).join('\n')
@@ -72,13 +75,13 @@ ${draft.risenPrompt}
 ${draft.parameterProfile ? `\n## Parameter Profile\n${draft.parameterProfile}` : ''}
 
 ## Shared Documentation
-${draft.sharedDocs.map(d => `- ${d}`).join('\n')}
+ ${(draft.sharedDocs ?? []).map(d => `- ${d}`).join('\n')}
 `;
 }
 
 // ── Source map entry ───────────────────────────────────────────────────
 
-export function generateSourceMapEntry(draft: AgentDraft): string {
+export function generateSourceMapEntry(draft: AgentDraftInput): string {
   return `{ agentId: '${draft.slug}', displayName: '${draft.name}', docFile: 'docs/agent_model_files/${draft.slug}.md', role: '${draft.role}' },`;
 }
 
@@ -110,7 +113,8 @@ export function loadDrafts(): SavedDraft[] {
   }
 }
 
-export function saveDraft(draft: AgentDraft): SavedDraft {
+export function saveDraft(input: AgentDraftInput): SavedDraft {
+  const draft = agentDraftSchema.parse(input);
   const drafts = loadDrafts();
   const existing = drafts.findIndex(d => d.id === draft.slug);
   const entry: SavedDraft = {

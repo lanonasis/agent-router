@@ -1,10 +1,10 @@
 import { Button } from '@/components/ui/button';
-import { AgentDraft, generateMarkdown, generateSourceMapEntry, saveDraft } from '@/lib/agentDraftUtils';
+import { AgentDraftInput, generateMarkdown, generateSourceMapEntry, saveDraft } from '@/lib/agentDraftUtils';
 import { Save, Download, Copy, Info } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
-  draft: AgentDraft;
+  draft: AgentDraftInput;
   isValid: boolean;
   onDraftSaved?: () => void;
 }

@@ -1,11 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AgentDraft, generateMarkdown, generateSourceMapEntry, parseTraits } from '@/lib/agentDraftUtils';
+import { AgentDraftInput, generateMarkdown, generateSourceMapEntry, parseTraits } from '@/lib/agentDraftUtils';
 import { Bot, FileText, Map } from 'lucide-react';
 
 interface Props {
-  draft: AgentDraft;
+  draft: AgentDraftInput;
 }
 
 export default function AgentPreviewPanel({ draft }: Props) {
