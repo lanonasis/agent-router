@@ -13,7 +13,9 @@
  * emails. Only ids, labels, timings and short error reasons.
  *
  * Scope: one ring buffer per process. If the router runs as several
- * processes, each one only knows the requests it served.
+ * processes, each one only knows the requests it served — which is why
+ * settled entries are also handed to `onSettle` (core/activity-store.js
+ * writes them to disk, shared by every process and kept across restarts).
  */
 
 const DEFAULT_CAPACITY = 200;
@@ -47,7 +49,7 @@ function describeOrigin(req) {
   return 'api';
 }
 
-function createActivityLog({ capacity = DEFAULT_CAPACITY, now = () => Date.now() } = {}) {
+function createActivityLog({ capacity = DEFAULT_CAPACITY, now = () => Date.now(), onSettle = null } = {}) {
   const cap = Math.max(1, parseInt(capacity, 10) || DEFAULT_CAPACITY);
   /** @type {Map<string, object>} insertion-ordered: oldest first */
   const entries = new Map();
@@ -76,6 +78,7 @@ function createActivityLog({ capacity = DEFAULT_CAPACITY, now = () => Date.now()
         statusCode: null,
         durationMs: null,
         error: null,
+        finishedAt: null,
       };
       entries.set(requestId, entry);
       trim();
@@ -125,6 +128,10 @@ function createActivityLog({ capacity = DEFAULT_CAPACITY, now = () => Date.now()
         } else {
           entry.status = 'failed';
           entry.error = event.error ? String(event.error).slice(0, MAX_ERROR_CHARS) : null;
+        }
+        entry.finishedAt = new Date(now()).toISOString();
+        if (typeof onSettle === 'function') {
+          try { onSettle({ ...entry, attempts: entry.attempts.map((a) => ({ ...a })) }); } catch { /* persistence must never break a request */ }
         }
       }
       // 'fallback' events duplicate vendor_failure for the same attempt — the
