@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Pause, Play, RefreshCw, Settings2, Zap } from "lucide-react";
+import { ChevronRight, Database, Pause, Play, RefreshCw, Settings2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useRouterSettings } from "@/lib/routerSettings";
@@ -23,6 +23,13 @@ const STATUS_STYLE: Record<ActivityStatus, { label: string; text: string; dot: s
 };
 
 type Filter = "all" | "recovered" | "failed";
+
+const fmtWhen = (iso: string) => {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString()
+    : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${d.toLocaleTimeString()}`;
+};
 
 const fmtMs = (ms: number | null) => (ms == null ? null : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`);
 
@@ -83,6 +90,7 @@ export default function RouterActivity() {
     [data, filter],
   );
   const err = error instanceof ActivityError ? error : error ? new ActivityError("http", String(error)) : null;
+  const stored = data?.persistence?.enabled ? data.persistence : null;
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 text-fg">
@@ -118,7 +126,7 @@ export default function RouterActivity() {
       {data && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
-            ["Buffered", `${data.stats.buffered}/${data.stats.capacity}`, "text-fg"],
+            [stored ? "Shown" : "Buffered", `${data.stats.buffered}/${data.stats.capacity}`, "text-fg"],
             ["Completed", data.stats.completed, "text-success"],
             ["Recovered", data.stats.recovered, "text-warning"],
             ["Failed", data.stats.failed, "text-destructive"],
@@ -173,7 +181,10 @@ export default function RouterActivity() {
             {data && entries.length === 0 && (
               <div className="p-8 text-center space-y-1">
                 <Zap className="h-5 w-5 mx-auto text-fgMuted" />
-                <div className="text-sm">No requests {filter !== "all" ? `with status "${filter}" ` : ""}since the router last started.</div>
+                <div className="text-sm">
+                  No requests {filter !== "all" ? `with status "${filter}" ` : ""}
+                  {stored ? `in the last ${stored.retentionDays} days.` : "since the router last started."}
+                </div>
                 <div className="text-xs text-fgMuted">New requests appear here within {POLL_MS / 1000}s.</div>
               </div>
             )}
@@ -185,7 +196,7 @@ export default function RouterActivity() {
                   <button className="w-full text-left" onClick={() => setOpen(isOpen ? null : e.requestId)} aria-expanded={isOpen}>
                     <div className="flex items-center gap-3 mb-2">
                       <span className={`h-2 w-2 rounded-full ${st.dot}`} />
-                      <span className="font-mono text-xs text-fgMuted">{new Date(e.startedAt).toLocaleTimeString()}</span>
+                      <span className="font-mono text-xs text-fgMuted">{fmtWhen(e.startedAt)}</span>
                       <span className="font-mono text-[10px] text-fgMuted truncate">{e.requestId.slice(0, 12)}</span>
                       {e.endpoint && <Badge variant="outline" className="font-mono text-[10px]">{e.endpoint}</Badge>}
                     </div>
@@ -203,9 +214,34 @@ export default function RouterActivity() {
               );
             })}
           </div>
-          <p className="text-xs text-fgMuted">
-            Kept in the router's memory only (last {data?.stats.capacity ?? 200} requests) — it resets when the router restarts. Full logs stay on the server.
-          </p>
+          {data && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-fgMuted">
+              {stored ? (
+                <>
+                  <Badge variant="outline" className="gap-1 border-success/60 text-success font-mono text-[10px]">
+                    <Database className="h-3 w-3" /> saved on server
+                  </Badge>
+                  <span>
+                    Kept for {stored.retentionDays} day{stored.retentionDays === 1 ? "" : "s"}
+                    {stored.oldestDay ? ` · history since ${stored.oldestDay}` : ""} — survives router restarts and is shared by every router process.
+                    Change with ROUTER_ACTIVITY_RETENTION_DAYS on the server.
+                  </span>
+                  {stored.lastError && <span className="text-destructive">Last storage error: {stored.lastError}</span>}
+                </>
+              ) : (
+                <>
+                  <Badge variant="outline" className="gap-1 border-warning/60 text-warning font-mono text-[10px]">
+                    <Database className="h-3 w-3" /> memory only
+                  </Badge>
+                  <span>
+                    {data.persistence
+                      ? "Saving is turned off on the router (ROUTER_ACTIVITY_PERSIST=false) — history resets on restart."
+                      : `This router version keeps only the last ${data.stats.capacity} requests in memory — deploy the latest router code to keep history across restarts.`}
+                  </span>
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
