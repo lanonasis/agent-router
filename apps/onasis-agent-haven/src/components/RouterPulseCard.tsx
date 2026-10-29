@@ -15,7 +15,7 @@ export function RouterPulseCard() {
   return (
     <Link
       to="/chain"
-      className="group block rounded-xl border border-border bg-bgMuted/40 hover:border-brandBlue transition-colors p-4"
+      className="group block rounded-xl border border-border bg-bg hover:border-brandBlue shadow-sm transition-colors p-4"
     >
       <div className="flex flex-wrap items-center gap-4 justify-between">
         <div className="flex items-center gap-3">

@@ -35,14 +35,14 @@ const AgentsLayout: React.FC = () => {
             { to: "/agents", label: "agents" },
             { to: "/docs", label: "docs" },
           ].map((l) => (
-            <NavLink key={l.to} to={l.to} className={({ isActive }) => `px-2 py-1 rounded ${isActive ? "text-fg bg-bgMuted" : "text-fgMuted hover:text-fg"}`}>
+            <NavLink key={l.to} to={l.to} className={({ isActive }) => `px-2 py-1 rounded ${isActive ? "text-[#fff] bg-[#2a2a2a]" : "text-[#888] hover:text-[#fff]"}`}>
               {l.label}
             </NavLink>
           ))}
           <NavLink
             to="/chain"
             className={({ isActive }) =>
-              `flex items-center gap-1.5 px-3 py-1 rounded border transition-colors ${isActive ? "border-brandBlue text-brandBlue bg-brandBlue/10" : "border-border text-fg hover:border-brandBlue hover:text-brandBlue"}`
+              `flex items-center gap-1.5 px-3 py-1 rounded border transition-colors ${isActive ? "border-[#00ff00] text-[#00ff00] bg-[#00ff00]/10" : "border-[#444] text-[#ddd] hover:border-[#00ff00] hover:text-[#00ff00]"}`
             }
           >
             <span className="relative flex h-2 w-2">
