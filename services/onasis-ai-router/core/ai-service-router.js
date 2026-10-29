@@ -46,6 +46,7 @@ const {
 const { sanitizePublicAsk } = require('./public-ask');
 const { ChainExecutor, VendorsExhaustedError } = require('./chain-executor');
 const { createOpsEventClient } = require('./ops-event-client');
+const { createActivityLog, describeOrigin } = require('./activity-log');
 const sessionMemoryProxy = require('./session-memory-proxy');
 
 // Node 18+ has native fetch globally available; no node-fetch needed.
@@ -101,7 +102,17 @@ class AIServiceRouter {
         new winston.transports.Console()
       ]
     });
-    this._emitOpsEvent = createOpsEventClient({ logger: this.logger });
+    // Every ops event also feeds the in-memory activity trail the operator
+    // dashboard reads (GET /api/v1/ops/activity) — same events, no new probes.
+    this._activity = createActivityLog({ capacity: process.env.ROUTER_ACTIVITY_CAPACITY });
+    this._opsOrgIds = new Set(
+      String(process.env.ROUTER_OPS_ORG_IDS || '').split(',').map((s) => s.trim()).filter(Boolean)
+    );
+    const deliverOpsEvent = createOpsEventClient({ logger: this.logger });
+    this._emitOpsEvent = (event) => {
+      try { this._activity.record(event); } catch { /* never let the trail break a request */ }
+      return deliverOpsEvent(event);
+    };
 
     this.authenticateRequest = createAuthMiddleware({
       authGatewayUrl: this.authGatewayUrl,
@@ -191,6 +202,13 @@ class AIServiceRouter {
         }
       });
     }
+
+    this._activity.begin(req.requestId, {
+      origin: describeOrigin(req),
+      endpoint: req.originalUrl || req.path,
+      useCase: resolveUseCaseFromRequest(req),
+      organizationId: req.uai?.organizationId,
+    });
 
     try {
       let result;
