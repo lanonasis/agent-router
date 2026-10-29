@@ -18,6 +18,7 @@ import {
 import { AgentType } from "@/types/agent";
 import { useAgents } from "@/hooks/useAgents";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { RouterPulseCard } from "@/components/RouterPulseCard";
 
 const ROLE_ACCENTS: Record<string, string> = {
   Orchestrator: "border-l-brandPurple",
@@ -93,6 +94,7 @@ const AgentsDashboard = () => {
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
+      <RouterPulseCard />
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>

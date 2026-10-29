@@ -1,9 +1,12 @@
-import { Outlet } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
+import { useRouterHeartbeat, STATUS_BG } from "@/hooks/useRouterHeartbeat";
 
 const AgentsLayout: React.FC = () => {
   const { logout, user, isDevBypass } = useAuth();
+  const { data: heartbeat } = useRouterHeartbeat();
+  const routerStatus = heartbeat?.routerStatus ?? "warn";
 
   return (
     <div className="min-h-screen w-full bg-[#0a0a0a]">
@@ -27,6 +30,28 @@ const AgentsLayout: React.FC = () => {
             </span>
           )}
         </div>
+        <nav className="flex items-center gap-1 font-mono text-xs">
+          {[
+            { to: "/agents", label: "agents" },
+            { to: "/docs", label: "docs" },
+          ].map((l) => (
+            <NavLink key={l.to} to={l.to} className={({ isActive }) => `px-2 py-1 rounded ${isActive ? "text-fg bg-bgMuted" : "text-fgMuted hover:text-fg"}`}>
+              {l.label}
+            </NavLink>
+          ))}
+          <NavLink
+            to="/chain"
+            className={({ isActive }) =>
+              `flex items-center gap-1.5 px-3 py-1 rounded border transition-colors ${isActive ? "border-brandBlue text-brandBlue bg-brandBlue/10" : "border-border text-fg hover:border-brandBlue hover:text-brandBlue"}`
+            }
+          >
+            <span className="relative flex h-2 w-2">
+              <span className={`absolute inline-flex h-full w-full rounded-full opacity-70 animate-ping ${STATUS_BG[routerStatus]}`} />
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${STATUS_BG[routerStatus]}`} />
+            </span>
+            Router Chain & Topology
+          </NavLink>
+        </nav>
         <button
           onClick={logout}
           className="text-xs font-mono text-[#888] hover:text-[#ff5f56] hover:border-[#ff5f56] border border-[#333] hover:border-[#ff5f56] rounded px-2 py-1 transition-all duration-200"
