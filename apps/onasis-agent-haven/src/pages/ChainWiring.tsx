@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Activity, RefreshCw, Radio, X } from "lucide-react";
+import { ArrowLeft, Activity, RefreshCw, Radio, Settings2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { ChainEdge, ChainNode, NodeStatus } from "@/services/chainService";
@@ -192,6 +192,12 @@ export default function ChainWiring() {
           <span className="font-mono text-xs text-fgMuted">{isFetching ? "probing…" : `next beat in ${nextIn}s`}</span>
           <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching} className="gap-1.5">
             <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} /> Ping now
+          </Button>
+          <Button asChild size="sm" variant="outline" className="gap-1.5">
+            <Link to="/activity"><Activity className="h-3.5 w-3.5" /> Activity</Link>
+          </Button>
+          <Button asChild size="sm" variant="outline" className="gap-1.5">
+            <Link to="/settings"><Settings2 className="h-3.5 w-3.5" /> Settings</Link>
           </Button>
         </div>
       </div>
