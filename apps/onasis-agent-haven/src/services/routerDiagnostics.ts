@@ -13,10 +13,12 @@ export interface DiagnosticCheck {
 }
 
 const TIMEOUT_MS = 6000;
+/** Authenticated calls wait on the auth gateway (router allows it up to ~20s on a cold cache). */
+const AUTH_TIMEOUT_MS = 20000;
 
-async function timedFetch(url: string, init: RequestInit = {}) {
+async function timedFetch(url: string, init: RequestInit = {}, timeoutMs = TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const started = performance.now();
   try {
     const res = await fetch(url, { ...init, signal: controller.signal });
@@ -136,7 +138,7 @@ export async function runRouterDiagnostics(settings: RouterSettings): Promise<Di
     return checks;
   }
   try {
-    const { res, ms } = await timedFetch(`${base}/ai-health`, { headers: { Accept: "application/json", ...routerAuthHeaders(settings) } });
+    const { res, ms } = await timedFetch(`${base}/ai-health`, { headers: { Accept: "application/json", ...routerAuthHeaders(settings) } }, AUTH_TIMEOUT_MS);
     if (res.ok) {
       checks.push({ id: "auth", label: "Signed-in access", state: "pass", detail: `Accepted (${cred === "api-key" ? "API key" : "session token"}) in ${ms} ms` });
     } else if (res.status === 401 || res.status === 403) {
@@ -146,7 +148,12 @@ export async function runRouterDiagnostics(settings: RouterSettings): Promise<Di
     } else {
       checks.push({ id: "auth", label: "Signed-in access", state: "warn", detail: `HTTP ${res.status} — the auth service may be slow or down.` });
     }
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      checks.push({ id: "auth", label: "Signed-in access", state: "warn", detail: `No answer within ${AUTH_TIMEOUT_MS / 1000}s — the auth service is slow or down.` });
+      checks.push({ id: "activity", label: "Activity feed", state: "skip", detail: "Needs signed-in access." });
+      return checks;
+    }
     checks.push({ id: "auth", label: "Signed-in access", state: "fail", detail: "Blocked by the browser — the router must allow the X-API-Key / Authorization headers from this address." });
     checks.push({ id: "activity", label: "Activity feed", state: "skip", detail: "Needs signed-in access." });
     return checks;
@@ -154,7 +161,7 @@ export async function runRouterDiagnostics(settings: RouterSettings): Promise<Di
 
   // 6. Activity endpoint
   try {
-    const { res } = await timedFetch(`${base}/api/v1/ops/activity?limit=1`, { headers: { Accept: "application/json", ...routerAuthHeaders(settings) } });
+    const { res } = await timedFetch(`${base}/api/v1/ops/activity?limit=1`, { headers: { Accept: "application/json", ...routerAuthHeaders(settings) } }, AUTH_TIMEOUT_MS);
     if (res.ok) {
       const data = await res.json();
       checks.push({ id: "activity", label: "Activity feed", state: "pass", detail: `Available · scope: ${data?.scope ?? "organization"} · ${data?.stats?.buffered ?? 0} requests buffered` });
@@ -163,8 +170,9 @@ export async function runRouterDiagnostics(settings: RouterSettings): Promise<Di
     } else {
       checks.push({ id: "activity", label: "Activity feed", state: "warn", detail: `HTTP ${res.status}` });
     }
-  } catch {
-    checks.push({ id: "activity", label: "Activity feed", state: "fail", detail: "Request blocked or failed." });
+  } catch (err) {
+    const aborted = err instanceof DOMException && err.name === "AbortError";
+    checks.push({ id: "activity", label: "Activity feed", state: aborted ? "warn" : "fail", detail: aborted ? `No answer within ${AUTH_TIMEOUT_MS / 1000}s.` : "Request blocked or failed." });
   }
 
   return checks;
