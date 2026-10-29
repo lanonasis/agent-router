@@ -53,6 +53,29 @@ export interface AuthUser {
   role?: string;
 }
 
+/**
+ * Dev-only auth bypass. `import.meta.env.DEV` is statically false in
+ * production builds, so the bypass branch is dead code there and the flag in
+ * sessionStorage is ignored. The flag lives in sessionStorage (per-tab) so a
+ * reload keeps you in, but closing the tab returns you to the real login.
+ */
+export const DEV_AUTH_BYPASS_AVAILABLE = import.meta.env.DEV;
+const DEV_BYPASS_KEY = "lanonasis_dev_auth_bypass";
+const DEV_USER: AuthUser = {
+  id: "dev-user",
+  email: "dev@lanonasis.local",
+  role: "admin",
+};
+
+function isDevBypassActive(): boolean {
+  if (!DEV_AUTH_BYPASS_AVAILABLE) return false;
+  try {
+    return sessionStorage.getItem(DEV_BYPASS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 interface AuthContextValue {
   isLoggedIn: boolean;
   isInitializing: boolean;
@@ -64,6 +87,10 @@ interface AuthContextValue {
   loading: boolean;
   clearError: () => void;
   signupUrl: string;
+  /** True when the current session is the dev-only mock user. */
+  isDevBypass: boolean;
+  /** Dev-only: sign in as the mock dev user. No-op in production builds. */
+  enterDevBypass: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
