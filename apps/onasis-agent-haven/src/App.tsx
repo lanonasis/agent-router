@@ -14,6 +14,7 @@ import ChainWiring from "./pages/ChainWiring";
 import DocsBrowser from "./pages/DocsBrowser";
 import RouterActivity from "./pages/RouterActivity";
 import RouterSettings from "./pages/RouterSettings";
+import AgentPlayground from "./pages/AgentPlayground";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 
@@ -78,6 +79,7 @@ const App = () => (
               }>
                 <Route path="/activity" element={<RouterActivity />} />
                 <Route path="/settings" element={<RouterSettings />} />
+                <Route path="/playground" element={<AgentPlayground />} />
               </Route>
 
               <Route path="*" element={<NotFound />} />

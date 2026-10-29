@@ -47,6 +47,7 @@ const { sanitizePublicAsk } = require('./public-ask');
 const { ChainExecutor, VendorsExhaustedError } = require('./chain-executor');
 const { createOpsEventClient } = require('./ops-event-client');
 const { createActivityLog, describeOrigin } = require('./activity-log');
+const { createActivityStore } = require('./activity-store');
 const sessionMemoryProxy = require('./session-memory-proxy');
 
 // Node 18+ has native fetch globally available; no node-fetch needed.
@@ -104,7 +105,26 @@ class AIServiceRouter {
     });
     // Every ops event also feeds the in-memory activity trail the operator
     // dashboard reads (GET /api/v1/ops/activity) — same events, no new probes.
-    this._activity = createActivityLog({ capacity: process.env.ROUTER_ACTIVITY_CAPACITY });
+    // Settled entries are also written to disk (daily JSON-lines files, shared
+    // by every replica) so the trail survives restarts; old days are pruned
+    // after ROUTER_ACTIVITY_RETENTION_DAYS. ROUTER_ACTIVITY_PERSIST=false
+    // keeps the old memory-only behaviour.
+    this._activityStore = createActivityStore({
+      dir: process.env.ROUTER_ACTIVITY_DIR || require('path').join(__dirname, '../logs/activity'),
+      retentionDays: process.env.ROUTER_ACTIVITY_RETENTION_DAYS,
+      enabled: String(process.env.ROUTER_ACTIVITY_PERSIST || 'true').toLowerCase() !== 'false',
+      logger: this.logger,
+    });
+    this._activity = createActivityLog({
+      capacity: process.env.ROUTER_ACTIVITY_CAPACITY,
+      onSettle: (entry) => { this._activityStore.append(entry); },
+    });
+    if (this._activityStore.enabled) {
+      const prune = () => this._activityStore.prune().catch(() => {});
+      prune();
+      const pruneTimer = setInterval(prune, 60 * 60 * 1000);
+      if (typeof pruneTimer.unref === 'function') pruneTimer.unref();
+    }
     this._opsOrgIds = new Set(
       String(process.env.ROUTER_OPS_ORG_IDS || '').split(',').map((s) => s.trim()).filter(Boolean)
     );
@@ -1682,18 +1702,49 @@ class AIServiceRouter {
 
     // Operator activity trail — metadata only (no prompts or answers).
     // A caller sees its own organisation's requests; orgs listed in
-    // ROUTER_OPS_ORG_IDS see every request this process served.
+    // ROUTER_OPS_ORG_IDS see every request. Live in-progress entries come from
+    // this process's memory; settled history comes from the shared on-disk
+    // store, so every replica answers the same and restarts lose nothing.
     router.get('/api/v1/ops/activity',
       this.authenticateRequest,
-      (req, res) => {
+      async (req, res) => {
         const organizationId = req.uai?.organizationId || null;
         const all = !!organizationId && this._opsOrgIds.has(organizationId);
-        const limit = req.query?.limit;
+        const limit = Math.min(Math.max(1, parseInt(req.query?.limit, 10) || 50), 500);
+        const window = Math.max(limit, this._activity.stats({ all: true }).capacity);
+        const live = this._activity.list({ organizationId, all, limit: window });
+        let merged = live;
+        let persistence = { enabled: false };
+        try {
+          persistence = await this._activityStore.info();
+          if (persistence.enabled) {
+            const stored = await this._activityStore.recent({
+              limit: window,
+              filter: all ? null : (e) => !!organizationId && e.organizationId === organizationId,
+            });
+            const byId = new Map(stored.map((e) => [e.requestId, e]));
+            for (const e of live) byId.set(e.requestId, e); // memory copy wins (may be newer)
+            merged = Array.from(byId.values())
+              .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
+              .slice(0, window);
+          }
+        } catch (error) {
+          this.logger.warn('Activity history read failed', { error: error.message });
+        }
+        const count = (s) => merged.filter((e) => e.status === s).length;
         res.json({
           scope: all ? 'all' : 'organization',
           process: { pid: process.pid, uptime_s: Math.round(process.uptime()) },
-          stats: this._activity.stats({ organizationId, all }),
-          entries: this._activity.list({ organizationId, all, limit }),
+          stats: {
+            buffered: merged.length,
+            capacity: window,
+            completed: count('completed'),
+            recovered: count('recovered'),
+            failed: count('failed'),
+            inProgress: count('in_progress'),
+          },
+          persistence,
+          entries: merged.slice(0, limit),
           timestamp: new Date().toISOString(),
         });
       }

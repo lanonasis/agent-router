@@ -14,6 +14,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { ToolLoop } = require('../core/tool-loop');
 
+// Restore (not delete) fetch afterwards: `bun test` runs every file in one
+// process, so deleting it broke every later test that calls fetch.
+const originalFetch = globalThis.fetch;
+
 const silent = { warn() {}, info() {}, error() {} };
 
 function makeToolLoop() {
@@ -91,5 +95,5 @@ test('executeToolCalls defaults to concurrency=3 when no options passed', async 
 
 // Clean up
 test.after(() => {
-  delete globalThis.fetch;
+  globalThis.fetch = originalFetch;
 });

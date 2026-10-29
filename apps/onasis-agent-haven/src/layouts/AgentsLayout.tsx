@@ -35,6 +35,7 @@ const AgentsLayout: React.FC = () => {
           {[
             { to: "/agents", label: "agents" },
             { to: "/docs", label: "docs" },
+            { to: "/playground", label: "playground" },
             { to: "/activity", label: "activity" },
             { to: "/settings", label: "settings" },
           ].map((l) => (

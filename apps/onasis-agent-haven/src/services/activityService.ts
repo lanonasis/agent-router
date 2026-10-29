@@ -23,12 +23,25 @@ export interface ActivityEntry {
   statusCode: number | null;
   durationMs: number | null;
   error: string | null;
+  finishedAt?: string | null;
+}
+
+/** Server-side history store. Absent on routers deployed before persistence. */
+export interface ActivityPersistence {
+  enabled: boolean;
+  retentionDays?: number;
+  oldestDay?: string | null;
+  days?: number;
+  written?: number;
+  lastPrunedAt?: string | null;
+  lastError?: string | null;
 }
 
 export interface ActivityFeed {
   scope: "all" | "organization";
   process: { pid: number; uptime_s: number };
   stats: { buffered: number; capacity: number; completed: number; recovered: number; failed: number; inProgress: number };
+  persistence?: ActivityPersistence;
   entries: ActivityEntry[];
   timestamp: string;
 }

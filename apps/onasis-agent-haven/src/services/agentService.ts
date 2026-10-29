@@ -248,6 +248,9 @@ You MUST NOT: write order-dependent tests, fix code under test (report to coder)
   }
 ];
 
+/** The six documented agents, synchronously (no simulated latency). */
+export const getDocumentedAgents = (): AgentType[] => agents;
+
 export const fetchAgents = async (filter: string): Promise<AgentType[]> => {
   await new Promise(resolve => setTimeout(resolve, 800));
   
