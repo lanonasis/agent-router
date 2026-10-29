@@ -233,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [devBypass]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -287,7 +287,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [navigate]
   );
 
+  const enterDevBypass = useCallback(() => {
+    if (!DEV_AUTH_BYPASS_AVAILABLE) return;
+    try {
+      sessionStorage.setItem(DEV_BYPASS_KEY, "1");
+    } catch {
+      // Storage unavailable: bypass still works until reload.
+    }
+    setError(null);
+    setToken(null);
+    setUser(DEV_USER);
+    setIsDevBypass(true);
+    setIsInitializing(false);
+    navigate("/agents", { replace: true });
+  }, [navigate]);
+
   const logout = useCallback(async () => {
+    if (isDevBypass) {
+      try {
+        sessionStorage.removeItem(DEV_BYPASS_KEY);
+      } catch {
+        // ignore
+      }
+      setIsDevBypass(false);
+      setUser(null);
+      setToken(null);
+      setError(null);
+      navigate("/login", { replace: true });
+      return;
+    }
+
     const current = token ?? localStorage.getItem(AUTH_TOKEN_KEY);
 
     localStorage.removeItem(AUTH_TOKEN_KEY);
@@ -319,7 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     navigate("/login", { replace: true });
-  }, [navigate, token]);
+  }, [navigate, token, isDevBypass]);
 
   return (
     <AuthContext.Provider
@@ -334,6 +363,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         clearError,
         signupUrl,
+        isDevBypass,
+        enterDevBypass,
       }}
     >
       {children}
