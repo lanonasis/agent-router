@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, AlertCircle, Loader2, Trash2, Archive, PenSquare, MoreVertical, Network } from "lucide-react";
+import { ArrowLeft, AlertCircle, Loader2, Trash2, Archive, PenSquare, MoreVertical, Network, FlaskConical } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
