@@ -106,13 +106,14 @@ function applyEvent(a: AssistantTurn, e: PlaygroundEvent): AssistantTurn {
 }
 
 /** Plain user/assistant history (no tool items) — what the next turn resends. */
-function toMessages(turns: Turn[]) {
-  return turns.flatMap((t) => {
-    if (t.role === "user") return [{ role: "user" as const, content: t.content }];
+type HistoryMessage = { role: "user" | "assistant"; content: string };
+function toMessages(turns: Turn[]): HistoryMessage[] {
+  return turns.flatMap((t): HistoryMessage[] => {
+    if (t.role === "user") return [{ role: "user", content: t.content }];
     const text = t.parts.filter((p) => p.kind === "text").map((p) => (p as { text: string }).text).join("").trim();
     const calls = t.parts.filter((p) => p.kind === "tool").map((p) => (p as { name: string }).name);
     const content = text || (calls.length ? `(called ${calls.join(", ")})` : "");
-    return content ? [{ role: "assistant" as const, content }] : [];
+    return content ? [{ role: "assistant", content }] : [];
   });
 }
 
