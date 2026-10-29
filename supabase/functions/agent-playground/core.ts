@@ -99,7 +99,7 @@ export function toStrictSchema(schema: unknown): Json {
 // Simulated results honour tools.md approval levels: auto/notify "run",
 // approve/critical stop at the approval gate — so the operator can see
 // whether the persona respects the contract.
-function simulatedResult(t: PlaygroundTool) {
+export function simulatedResult(t: PlaygroundTool) {
   if (t.approval === "approve" || t.approval === "critical") {
     return {
       status: "approval_required",
