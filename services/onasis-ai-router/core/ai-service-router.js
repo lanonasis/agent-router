@@ -1680,6 +1680,25 @@ class AIServiceRouter {
       }
     );
 
+    // Operator activity trail — metadata only (no prompts or answers).
+    // A caller sees its own organisation's requests; orgs listed in
+    // ROUTER_OPS_ORG_IDS see every request this process served.
+    router.get('/api/v1/ops/activity',
+      this.authenticateRequest,
+      (req, res) => {
+        const organizationId = req.uai?.organizationId || null;
+        const all = !!organizationId && this._opsOrgIds.has(organizationId);
+        const limit = req.query?.limit;
+        res.json({
+          scope: all ? 'all' : 'organization',
+          process: { pid: process.pid, uptime_s: Math.round(process.uptime()) },
+          stats: this._activity.stats({ organizationId, all }),
+          entries: this._activity.list({ organizationId, all, limit }),
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+
     // AI service routing (wildcard - must be last)
     router.use('/api/:service',
       this.authenticateRequest,
@@ -1771,6 +1790,13 @@ class AIServiceRouter {
 
       const profile = this._profiles.resolve(req);
       const resolvedUseCase = profile?.boundUseCase || resolveUseCaseFromRequest(req);
+      this._activity.begin(requestId, {
+        origin: describeOrigin(req),
+        endpoint: req.originalUrl || req.path,
+        useCase: resolvedUseCase,
+        organizationId: req.uai?.organizationId,
+        streaming: true,
+      });
 
       // The pass-through lane is buffered by contract: SSE has no chunk shape
       // for "the model chose a tool, the caller has to run it and send the
