@@ -1,13 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { fetchChainTopology, type NodeStatus } from "@/services/chainService";
+import { useRouterSettings } from "@/lib/routerSettings";
 
 export const HEARTBEAT_INTERVAL_MS = 10_000;
 
 /** Shared live probe of the AI router's /health, polled on a fixed heartbeat. */
 export function useRouterHeartbeat() {
+  const { url } = useRouterSettings();
   return useQuery({
-    queryKey: ["router-heartbeat"],
-    queryFn: () => fetchChainTopology(),
+    queryKey: ["router-heartbeat", url],
+    queryFn: () => fetchChainTopology(url),
     refetchInterval: HEARTBEAT_INTERVAL_MS,
     refetchIntervalInBackground: false,
     staleTime: HEARTBEAT_INTERVAL_MS / 2,

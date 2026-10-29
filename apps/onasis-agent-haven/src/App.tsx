@@ -12,6 +12,8 @@ import AgentDetails from "./pages/AgentDetails";
 import AgentCreate from "./pages/AgentCreate";
 import ChainWiring from "./pages/ChainWiring";
 import DocsBrowser from "./pages/DocsBrowser";
+import RouterActivity from "./pages/RouterActivity";
+import RouterSettings from "./pages/RouterSettings";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 
@@ -68,6 +70,15 @@ const App = () => (
                   <ChainWiring />
                 </ProtectedRoute>
               } />
+
+              <Route element={
+                <ProtectedRoute>
+                  <AgentsLayout />
+                </ProtectedRoute>
+              }>
+                <Route path="/activity" element={<RouterActivity />} />
+                <Route path="/settings" element={<RouterSettings />} />
+              </Route>
 
               <Route path="*" element={<NotFound />} />
             </Routes>

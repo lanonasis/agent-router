@@ -46,6 +46,7 @@ const {
 const { sanitizePublicAsk } = require('./public-ask');
 const { ChainExecutor, VendorsExhaustedError } = require('./chain-executor');
 const { createOpsEventClient } = require('./ops-event-client');
+const { createActivityLog, describeOrigin } = require('./activity-log');
 const sessionMemoryProxy = require('./session-memory-proxy');
 
 // Node 18+ has native fetch globally available; no node-fetch needed.
@@ -101,7 +102,17 @@ class AIServiceRouter {
         new winston.transports.Console()
       ]
     });
-    this._emitOpsEvent = createOpsEventClient({ logger: this.logger });
+    // Every ops event also feeds the in-memory activity trail the operator
+    // dashboard reads (GET /api/v1/ops/activity) — same events, no new probes.
+    this._activity = createActivityLog({ capacity: process.env.ROUTER_ACTIVITY_CAPACITY });
+    this._opsOrgIds = new Set(
+      String(process.env.ROUTER_OPS_ORG_IDS || '').split(',').map((s) => s.trim()).filter(Boolean)
+    );
+    const deliverOpsEvent = createOpsEventClient({ logger: this.logger });
+    this._emitOpsEvent = (event) => {
+      try { this._activity.record(event); } catch { /* never let the trail break a request */ }
+      return deliverOpsEvent(event);
+    };
 
     this.authenticateRequest = createAuthMiddleware({
       authGatewayUrl: this.authGatewayUrl,
@@ -191,6 +202,13 @@ class AIServiceRouter {
         }
       });
     }
+
+    this._activity.begin(req.requestId, {
+      origin: describeOrigin(req),
+      endpoint: req.originalUrl || req.path,
+      useCase: resolveUseCaseFromRequest(req),
+      organizationId: req.uai?.organizationId,
+    });
 
     try {
       let result;
@@ -1662,6 +1680,25 @@ class AIServiceRouter {
       }
     );
 
+    // Operator activity trail — metadata only (no prompts or answers).
+    // A caller sees its own organisation's requests; orgs listed in
+    // ROUTER_OPS_ORG_IDS see every request this process served.
+    router.get('/api/v1/ops/activity',
+      this.authenticateRequest,
+      (req, res) => {
+        const organizationId = req.uai?.organizationId || null;
+        const all = !!organizationId && this._opsOrgIds.has(organizationId);
+        const limit = req.query?.limit;
+        res.json({
+          scope: all ? 'all' : 'organization',
+          process: { pid: process.pid, uptime_s: Math.round(process.uptime()) },
+          stats: this._activity.stats({ organizationId, all }),
+          entries: this._activity.list({ organizationId, all, limit }),
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+
     // AI service routing (wildcard - must be last)
     router.use('/api/:service',
       this.authenticateRequest,
@@ -1753,6 +1790,13 @@ class AIServiceRouter {
 
       const profile = this._profiles.resolve(req);
       const resolvedUseCase = profile?.boundUseCase || resolveUseCaseFromRequest(req);
+      this._activity.begin(requestId, {
+        origin: describeOrigin(req),
+        endpoint: req.originalUrl || req.path,
+        useCase: resolvedUseCase,
+        organizationId: req.uai?.organizationId,
+        streaming: true,
+      });
 
       // The pass-through lane is buffered by contract: SSE has no chunk shape
       // for "the model chose a tool, the caller has to run it and send the
