@@ -18,6 +18,12 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
+  // Emit to the monorepo root `dist` so Lovable hosting (which builds from
+  // the repo root) finds the output.
+  build: {
+    outDir: path.resolve(__dirname, "../../dist"),
+    emptyOutDir: true,
+  },
   plugins: [
     react(),
     mode === 'development' &&

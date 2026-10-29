@@ -11,6 +11,8 @@
   "scripts": {
     "dev": "bun run --cwd apps/onasis-agent-haven dev",
     "build": "bun run --cwd apps/onasis-agent-haven build",
+    "build:dev": "bun run --cwd apps/onasis-agent-haven build:dev",
+    "preview": "bun run --cwd apps/onasis-agent-haven preview",
     "build:app": "bun run --cwd apps/onasis-agent-haven build",
     "router:start": "node services/onasis-ai-router/server.js",
     "router:dev": "nodemon services/onasis-ai-router/server.js",
