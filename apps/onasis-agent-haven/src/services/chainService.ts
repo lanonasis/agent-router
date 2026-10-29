@@ -1,3 +1,5 @@
+import { getRouterSettings } from "@/lib/routerSettings";
+
 /**
  * Chain Wiring Service
  * Fetches live topology and vendor health data from the AI router.
@@ -133,18 +135,17 @@ function vendorToNodeStatus(vh: VendorHealth | undefined): NodeStatus {
  * Fetch live chain topology from the AI router's /health endpoint.
  * Falls back to static defaults on error.
  *
- * `routerUrl` defaults to `VITE_ROUTER_URL` (set in .env or build args),
- * which prevents snapshots built without that env from pointing browsers
- * at `localhost:8000` — a dead end that breaks every viewer's request.
+ * `routerUrl` defaults to the operator's saved router address (Settings),
+ * falling back to the build-time `VITE_ROUTER_URL`.
  */
-const DEFAULT_ROUTER_URL =
-  typeof import.meta !== 'undefined' && import.meta.env?.VITE_ROUTER_URL
-    ? import.meta.env.VITE_ROUTER_URL
-    : 'http://localhost:8000';
-
-export async function fetchChainTopology(routerUrl = DEFAULT_ROUTER_URL): Promise<ChainTopology> {
+export async function fetchChainTopology(routerUrl = getRouterSettings().url): Promise<ChainTopology> {
   const topology = structuredClone(DEFAULT_TOPOLOGY);
   topology.verifiedAt = new Date().toISOString();
+  try {
+    topology.hostname = new URL(routerUrl).host;
+  } catch {
+    /* keep default label */
+  }
 
   try {
     const controller = new AbortController();
