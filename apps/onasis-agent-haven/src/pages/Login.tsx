@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, DEV_AUTH_BYPASS_AVAILABLE } from "@/contexts/AuthContext";
 import "./Login.css";
 
 const Login = () => {
@@ -12,6 +12,7 @@ const Login = () => {
     signupUrl,
     isLoggedIn,
     isInitializing,
+    enterDevBypass,
   } = useAuth();
 
   const [email, setEmail] = useState("");
@@ -123,6 +124,22 @@ const Login = () => {
               {error ? `✗ ${error}` : loading ? "→ Authenticating…" : ""}
             </div>
           </form>
+
+          {/* Dev-only: skip the gateway. Not rendered in production builds. */}
+          {DEV_AUTH_BYPASS_AVAILABLE && (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={enterDevBypass}
+              >
+                BYPASS AUTHENTICATION (DEV MODE)
+              </button>
+              <div className="output" style={{ marginTop: 6, fontSize: 12 }}>
+                → dev builds only · signs in as dev@lanonasis.local
+              </div>
+            </>
+          )}
 
           {/* Account creation is handled by the gateway's hosted page, which
               sets the session cookie and returns here. There is no
