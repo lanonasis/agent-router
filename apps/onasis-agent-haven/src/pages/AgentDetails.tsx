@@ -163,6 +163,11 @@ const AgentDetails = () => {
             {/* Actions */}
             <div className="flex items-center gap-2 shrink-0 self-start">
               <AgentToggle isActive={isActive} onToggle={handleStatusToggle} />
+              <Button asChild variant="outline" size="sm" className="h-9 gap-1.5">
+                <Link to={`/playground?agent=${agentId}`}>
+                  <FlaskConical className="h-4 w-4" /> Test in playground
+                </Link>
+              </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="icon" className="h-9 w-9">
