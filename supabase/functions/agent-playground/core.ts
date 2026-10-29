@@ -117,11 +117,11 @@ function simulatedResult(t: PlaygroundTool) {
 function buildTools(tools: PlaygroundTool[], simulate: boolean): ToolSet {
   const set: ToolSet = {};
   for (const t of tools) {
-    set[t.name] = tool({
-      description: `${t.description} [approval: ${t.approval}]`,
-      inputSchema: jsonSchema(toStrictSchema(t.parameters)),
-      ...(simulate ? { execute: async () => simulatedResult(t) } : {}),
-    });
+    const description = `${t.description} [approval: ${t.approval}]`;
+    const inputSchema = jsonSchema(toStrictSchema(t.parameters));
+    set[t.name] = simulate
+      ? tool({ description, inputSchema, execute: async () => simulatedResult(t) })
+      : tool({ description, inputSchema });
   }
   return set;
 }
