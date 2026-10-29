@@ -53,6 +53,29 @@ export interface AuthUser {
   role?: string;
 }
 
+/**
+ * Dev-only auth bypass. `import.meta.env.DEV` is statically false in
+ * production builds, so the bypass branch is dead code there and the flag in
+ * sessionStorage is ignored. The flag lives in sessionStorage (per-tab) so a
+ * reload keeps you in, but closing the tab returns you to the real login.
+ */
+export const DEV_AUTH_BYPASS_AVAILABLE = import.meta.env.DEV;
+const DEV_BYPASS_KEY = "lanonasis_dev_auth_bypass";
+const DEV_USER: AuthUser = {
+  id: "dev-user",
+  email: "dev@lanonasis.local",
+  role: "admin",
+};
+
+function isDevBypassActive(): boolean {
+  if (!DEV_AUTH_BYPASS_AVAILABLE) return false;
+  try {
+    return sessionStorage.getItem(DEV_BYPASS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 interface AuthContextValue {
   isLoggedIn: boolean;
   isInitializing: boolean;
@@ -64,6 +87,10 @@ interface AuthContextValue {
   loading: boolean;
   clearError: () => void;
   signupUrl: string;
+  /** True when the current session is the dev-only mock user. */
+  isDevBypass: boolean;
+  /** Dev-only: sign in as the mock dev user. No-op in production builds. */
+  enterDevBypass: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -116,9 +143,13 @@ function userFromToken(token: string): AuthUser {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [devBypass] = useState(isDevBypassActive);
+  const [isDevBypass, setIsDevBypass] = useState(devBypass);
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(
+    devBypass ? DEV_USER : null
+  );
+  const [isInitializing, setIsInitializing] = useState(!devBypass);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -131,7 +162,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //   1. the access token in localStorage (password login in this app)
   //   2. the httpOnly session cookie (returns from the gateway's hosted
   //      login/signup or an OAuth flow)
+  // Skipped entirely when the dev bypass is active (dev builds only).
   useEffect(() => {
+    if (devBypass) return;
     let cancelled = false;
 
     const hydrate = async () => {
@@ -200,7 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [devBypass]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -254,7 +287,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [navigate]
   );
 
+  const enterDevBypass = useCallback(() => {
+    if (!DEV_AUTH_BYPASS_AVAILABLE) return;
+    try {
+      sessionStorage.setItem(DEV_BYPASS_KEY, "1");
+    } catch {
+      // Storage unavailable: bypass still works until reload.
+    }
+    setError(null);
+    setToken(null);
+    setUser(DEV_USER);
+    setIsDevBypass(true);
+    setIsInitializing(false);
+    navigate("/agents", { replace: true });
+  }, [navigate]);
+
   const logout = useCallback(async () => {
+    if (isDevBypass) {
+      try {
+        sessionStorage.removeItem(DEV_BYPASS_KEY);
+      } catch {
+        // ignore
+      }
+      setIsDevBypass(false);
+      setUser(null);
+      setToken(null);
+      setError(null);
+      navigate("/login", { replace: true });
+      return;
+    }
+
     const current = token ?? localStorage.getItem(AUTH_TOKEN_KEY);
 
     localStorage.removeItem(AUTH_TOKEN_KEY);
@@ -286,7 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     navigate("/login", { replace: true });
-  }, [navigate, token]);
+  }, [navigate, token, isDevBypass]);
 
   return (
     <AuthContext.Provider
@@ -301,6 +363,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         clearError,
         signupUrl,
+        isDevBypass,
+        enterDevBypass,
       }}
     >
       {children}

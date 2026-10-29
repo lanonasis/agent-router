@@ -3,7 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
 
 const AgentsLayout: React.FC = () => {
-  const { logout, user } = useAuth();
+  const { logout, user, isDevBypass } = useAuth();
 
   return (
     <div className="min-h-screen w-full bg-[#0a0a0a]">
@@ -16,6 +16,14 @@ const AgentsLayout: React.FC = () => {
           {user?.email && (
             <span className="ml-4 text-[#888] text-xs">
               [{user.email}]
+            </span>
+          )}
+          {isDevBypass && (
+            <span
+              className="ml-2 text-[10px] text-[#ffbd2e] border border-[#ffbd2e] rounded px-1.5 py-0.5"
+              title="Authentication is bypassed in dev mode. EXIT returns to the real login."
+            >
+              DEV BYPASS
             </span>
           )}
         </div>
