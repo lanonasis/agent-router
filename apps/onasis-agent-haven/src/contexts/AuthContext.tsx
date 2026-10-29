@@ -143,9 +143,13 @@ function userFromToken(token: string): AuthUser {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [devBypass] = useState(isDevBypassActive);
+  const [isDevBypass, setIsDevBypass] = useState(devBypass);
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [user, setUser] = useState<AuthUser | null>(
+    devBypass ? DEV_USER : null
+  );
+  const [isInitializing, setIsInitializing] = useState(!devBypass);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -158,7 +162,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   //   1. the access token in localStorage (password login in this app)
   //   2. the httpOnly session cookie (returns from the gateway's hosted
   //      login/signup or an OAuth flow)
+  // Skipped entirely when the dev bypass is active (dev builds only).
   useEffect(() => {
+    if (devBypass) return;
     let cancelled = false;
 
     const hydrate = async () => {
