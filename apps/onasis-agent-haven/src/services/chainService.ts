@@ -59,6 +59,10 @@ export interface ChainTopology {
   /** Overall router status derived from /health */
   routerStatus: NodeStatus;
   vendorsHealthy: string;
+  /** Round-trip time of the /health probe, null when unreachable */
+  latencyMs: number | null;
+  /** Whether the router answered the last probe */
+  reachable: boolean;
 }
 
 /** Default: router unreachable or not configured */
@@ -99,6 +103,8 @@ const DEFAULT_TOPOLOGY: ChainTopology = {
   hostname: 'srv896342',
   routerStatus: 'warn',
   vendorsHealthy: '0/0',
+  latencyMs: null,
+  reachable: false,
 };
 
 /** Map router vendor IDs to diagram node IDs */
@@ -142,6 +148,7 @@ export async function fetchChainTopology(routerUrl = DEFAULT_ROUTER_URL): Promis
 
   try {
     const controller = new AbortController();
+    const started = performance.now();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
     const res = await fetch(`${routerUrl}/health`, {
@@ -152,6 +159,8 @@ export async function fetchChainTopology(routerUrl = DEFAULT_ROUTER_URL): Promis
     clearTimeout(timeout);
 
     if (res.ok) {
+      topology.reachable = true;
+      topology.latencyMs = Math.round(performance.now() - started);
       const data: RouterHealth = await res.json();
       const ai = data.services?.ai || {};
       const [healthy, total] = (data.vendors_healthy || '0/0').split('/').map(Number);
