@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/select";
 import { AgentType } from "@/types/agent";
 import { useAgents } from "@/hooks/useAgents";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { RouterPulseCard } from "@/components/RouterPulseCard";
 
 const ROLE_ACCENTS: Record<string, string> = {
@@ -112,7 +111,6 @@ const AgentsDashboard = () => {
               Docs
             </Button>
           </Link>
-          <ThemeToggle />
         </div>
       </div>
 
