@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-bundle-secrets.mjs --env && node scripts/check-agent-draft-schema.mjs && vite build && node scripts/check-bundle-secrets.mjs --dist",
-    "build:dev": "node scripts/check-bundle-secrets.mjs --env && node scripts/check-agent-draft-schema.mjs && vite build --mode development && node scripts/check-bundle-secrets.mjs --dist",
+    "build": "node scripts/check-bundle-secrets.mjs --env && node scripts/check-agent-draft-schema.mjs && vite build && node scripts/check-bundle-secrets.mjs --dist ../../dist",
+    "build:dev": "node scripts/check-bundle-secrets.mjs --env && node scripts/check-agent-draft-schema.mjs && vite build --mode development && node scripts/check-bundle-secrets.mjs --dist ../../dist",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check:secrets": "node scripts/check-bundle-secrets.mjs --env && node scripts/check-bundle-secrets.mjs --dist",
+    "check:secrets": "node scripts/check-bundle-secrets.mjs --env && node scripts/check-bundle-secrets.mjs --dist ../../dist",
     "check:schema": "node scripts/check-agent-draft-schema.mjs"
   },
   "dependencies": {

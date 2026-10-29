@@ -1,0 +1,9 @@
+{
+  // Root typecheck entry for Lovable's build pipeline, which runs `tsc` from
+  // the repo root. Inherits the app's config (its `include` and `paths`
+  // resolve relative to the app folder).
+  "extends": "./apps/onasis-agent-haven/tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": true
+  }
+}
