@@ -5,7 +5,7 @@ export type ActivityStatus = "in_progress" | "completed" | "recovered" | "failed
 export interface ActivityAttempt {
   vendor: string;
   outcome: "failed" | "served";
-  reason: "timeout" | "rate_limited" | "auth" | "upstream_5xx" | "unreachable" | "error" | null;
+  reason: "timeout" | "not_configured" | "rate_limited" | "auth" | "upstream_5xx" | "unreachable" | "error" | null;
   durationMs: number | null;
   error: string | null;
 }
@@ -60,6 +60,7 @@ export async function fetchActivity(settings: RouterSettings, limit = 50): Promi
 
 export const REASON_LABEL: Record<NonNullable<ActivityAttempt["reason"]>, string> = {
   timeout: "timeout",
+  not_configured: "not configured",
   rate_limited: "rate-limited",
   auth: "auth rejected",
   upstream_5xx: "upstream error",

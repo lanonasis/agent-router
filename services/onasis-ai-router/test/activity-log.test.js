@@ -59,6 +59,7 @@ test('the buffer keeps only the newest entries up to capacity', () => {
 
 test('error classification and origin labels', () => {
   assert.equal(classifyError('status 502 from upstream'), 'upstream_5xx');
+  assert.equal(classifyError('OPENAI_API_KEY is not configured — OpenAI vendor unavailable'), 'not_configured');
   assert.equal(classifyError('401 Unauthorized'), 'auth');
   assert.equal(classifyError('connect ECONNREFUSED 127.0.0.1:1234'), 'unreachable');
   assert.equal(describeOrigin({ headers: { origin: 'https://agent-router.lovable.app' } }), 'agent-router.lovable.app');

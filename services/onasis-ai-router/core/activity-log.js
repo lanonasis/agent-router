@@ -22,6 +22,7 @@ const MAX_ERROR_CHARS = 200;
 function classifyError(message) {
   const m = String(message || '').toLowerCase();
   if (!m) return 'error';
+  if (m.includes('not configured') || m.includes('enoent')) return 'not_configured';
   if (m.includes('abort') || m.includes('timeout') || m.includes('timed out') || m.includes('etimedout')) return 'timeout';
   if (/\b429\b/.test(m) || m.includes('rate limit') || m.includes('quota') || m.includes('credit')) return 'rate_limited';
   if (/\b(401|403)\b/.test(m) || m.includes('unauthor') || m.includes('forbidden')) return 'auth';
