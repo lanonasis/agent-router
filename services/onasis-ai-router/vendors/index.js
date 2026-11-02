@@ -968,6 +968,10 @@ function sanitizePersonaLeaks(text) {
   // the host's directory structure or the server operator's identity to an
   // end user asking "who are you?".
   out = out.replace(/\/(?:root|home)\/[^\s"'`]+/g, '[workspace]');
+  // The Pi vendor runs in a throwaway temp dir (vendors/pi/adapter.js) and the
+  // model can see it — "inspect the project files in /tmp/onasis-pi-YG57iP"
+  // reached a Slack user on 2026-11-02. Same treatment as home paths.
+  out = out.replace(/\/(?:tmp|var\/tmp|private\/tmp|opt\/lanonasis)\/[^\s"'`]+/g, '[workspace]');
   out = out.replace(/\bSeye\s+Derick\b/gi, 'the Onasis team');
   out = out.replace(/\bDerick'?s\b/gi, "the Onasis team's");
   out = out.replace(/\b(?:Seye|Derick)\b/g, 'the Onasis team');

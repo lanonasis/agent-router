@@ -79,7 +79,8 @@ Content-Type: application/json
 | field | required | notes |
 |---|---|---|
 | `use_case` | recommended | One of §4. Omitted → defaults to `ask-ai`. An unrecognised value silently falls back to `ask-ai` rather than erroring — so a typo fails quietly, double-check it. |
-| `messages` | yes | `[{role, content}]`, roles `user`/`assistant`. Include prior turns for multi-turn context — the router is stateless and does not remember your conversation. |
+| `messages` | yes | `[{role, content}]`, roles `user`/`assistant`. Either include prior turns yourself, or send only the latest turn plus a `session_id` and let the router restore them (below). |
+| `session_id` | no | Opt-in conversation continuity. 8–128 chars of `[A-Za-z0-9._:-]`; also accepted as the `X-Onasis-Session` header. See §2.2. |
 | `tools` | no | Only if you need to override the default tool set. Omit it — see §6. |
 
 `use_case` may also be sent as the `X-Use-Case` header. Body wins if both are present.
@@ -126,6 +127,30 @@ not entitled to fails. Ask the platform team to entitle your credential; you can
 
 Omit both headers and you get the use-case path, which is what every caller should do until a profile
 has been provisioned for them.
+
+### 2.2 Conversation continuity — `session_id`
+
+Chat surfaces that send one message per request (Slack, Discord, IDE sidebars) can let the router keep
+the thread: send a stable `session_id` per conversation and only the newest user message.
+
+```json
+{ "use_case": "memory-analysis", "session_id": "slack:T0123:C0456:1730590000.001",
+  "messages": [{ "role": "user", "content": "summarise those for me" }] }
+```
+
+- **Scoped to your credential's identity.** The same `session_id` under a different user/org is a
+  different, empty conversation — but if one API key fronts many end users, *you* must make the id
+  unique per end user and thread (e.g. include the platform user id). The router cannot tell your users
+  apart behind one key (§3 "One server key = one identity").
+- **Retention:** last 12 messages / 6,000 chars, expiring 30 min after the latest turn (operator-tunable).
+  Only the user's text and the final answer you were sent are kept — never tool results or prompts.
+- **You sent history anyway?** If `messages` already contains earlier turns, the router uses yours and
+  injects nothing.
+- The response echoes `onasis_metadata.session_id` and `session_turns_restored` so you can confirm it
+  took effect.
+
+Recommended ids: Slack `slack:{team}:{channel}:{thread_ts or user}`, Discord `discord:{guild}:{channel}:{user}`,
+IDE `ide:{workspace-hash}:{user}`.
 
 ### Response — 200
 
@@ -498,9 +523,11 @@ curl -sS https://ai.vortexcore.app/api/v1/ai-chat \
 
 ## 6. Memory tools — automatic, don't reimplement
 
-The router automatically offers the model `memory.search` and `memory.get`, scoped to the authenticated
-caller. Ask a memory-shaped question with `use_case: "memory-analysis"` and retrieval + synthesis happen
-server-side in one round trip.
+The router automatically offers the model `memory.search` (semantic), `memory.list` (newest/oldest
+first, with content — for "my last 10 entries", "what did I save this week") and `memory.get` (full text
+by id), scoped to the authenticated caller. Ask a memory-shaped question with
+`use_case: "memory-analysis"` and retrieval + synthesis happen server-side in one round trip. The model
+is told, per request, exactly which tools it has and never to ask the user to run commands.
 
 **Do not** search memories yourself and paste results into the prompt. That's slower, duplicates work
 the router already does, and produces worse answers than letting the model drive retrieval. (Several

@@ -150,6 +150,16 @@ function looksLikeCallBody(body) {
     || /<arg_key>/i.test(t);
 }
 
+/**
+ * Body of an UNCLOSED wrapper that is markup debris rather than prose: it
+ * starts with a newline, another tag, or a bare `invoke` marker. Prose that
+ * mentions a tag ("wrap it in a <tool_call> tag") continues on the same line
+ * with a word, so it is left alone.
+ */
+function isDanglingTag(body) {
+  return /^(?:[ \t]*\n|\s*<|\s*invoke\b|\s*$)/i.test(body);
+}
+
 function parseBlockBody(body, opener, openMatch) {
   if (opener.stripOnly) return [];
   if (opener.namedOpener) {
@@ -208,6 +218,17 @@ function extractInTextToolCalls(text) {
     const close = closeRe.exec(rest);
     const body = close ? rest.slice(0, close.index) : rest;
     const blockEnd = close ? bodyStart + close.index + close[0].length : text.length;
+
+    if (opener.requireCallBody && !looksLikeCallBody(body) && !close && isDanglingTag(body)) {
+      // An unclosed tag that is not prose either: the model started a call
+      // and abandoned it (observed live 2026-11-02 on memory-analysis:
+      // "<tool_call>\n<tool_call>invoke\nI'm unable to access…"). Remove the
+      // tag and a bare `invoke` marker, keep whatever prose follows.
+      found = true;
+      out += text.slice(cursor, match.index);
+      cursor = bodyStart + (body.match(/^\s*(?:invoke\b[^\n]*)?/i) || [''])[0].length;
+      continue;
+    }
 
     if (opener.requireCallBody && !looksLikeCallBody(body)) {
       // A tag that is being talked about, not used. Leave it in place.

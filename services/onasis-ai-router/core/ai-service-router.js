@@ -13,6 +13,7 @@ const {
   resolveVendorChainForUseCase,
   sanitizeVendorResponse,
   resolveUseCaseFromRequest,
+  VENDOR_REGISTRY,
 } = require('../vendors');
 const { fetchWithRetry } = require('../vendors/_shared/http-client');
 const { extractInTextToolCalls, offeredToolNames } = require('../vendors/_shared/tool-markup');
@@ -49,6 +50,9 @@ const { createOpsEventClient } = require('./ops-event-client');
 const { createActivityLog, describeOrigin } = require('./activity-log');
 const { createActivityStore } = require('./activity-store');
 const sessionMemoryProxy = require('./session-memory-proxy');
+const { withToolGuide, buildSessionNote } = require('./tool-guide');
+const { SessionStore, callerSentHistory } = require('./session-store');
+const { wantsMemoryTools } = require('./tool-affinity');
 
 // Node 18+ has native fetch globally available; no node-fetch needed.
 
@@ -88,6 +92,7 @@ class AIServiceRouter {
     this.memoryGetPath = process.env.MEMORY_GET_PATH || '/api/v1/memories';
     this.memoryWritePath = process.env.MEMORY_WRITE_PATH || '/api/v1/memories';
     this.memoryBatchGetPath = process.env.MEMORY_BATCH_GET_PATH || '';
+    this.memoryListPath = process.env.MEMORY_LIST_PATH || '/api/v1/memories/list';
 
     this._scoreboard = new VendorScoreboard();
 
@@ -169,6 +174,7 @@ class AIServiceRouter {
       memoryGetPath:      this.memoryGetPath,
       memoryWritePath:    this.memoryWritePath,
       memoryBatchGetPath: this.memoryBatchGetPath,
+      memoryListPath:     this.memoryListPath,
       memoryPrefetchTopK: this.memoryPrefetchTopK,
       routerTimeoutMs:    this.routerTimeoutMs,
       maxToolResultChars: this.maxToolResultChars,
@@ -183,6 +189,9 @@ class AIServiceRouter {
     });
 
     this._chain = new ChainExecutor({ scoreboard: this._scoreboard, logger: this.logger });
+    // Opt-in conversation continuity (session_id / X-Onasis-Session). See
+    // core/session-store.js for the scoping and retention contract.
+    this._sessions = new SessionStore({ logger: this.logger });
     // Probes real completions rather than reachability, and lets observed
     // request outcomes override an optimistic probe. See core/vendor-health.js.
     this._health = new VendorHealthMonitor({
@@ -279,6 +288,19 @@ class AIServiceRouter {
         ...(result?.truncated ? { truncated: true } : {}),
       });
       delete response.truncated;
+
+      if (req._sessionKey) {
+        response.onasis_metadata = {
+          ...response.onasis_metadata,
+          session_id: req._sessionId,
+          session_turns_restored: req._sessionTurnsRestored || 0,
+        };
+        // Saved after sanitisation: what is retained is exactly what the
+        // client was shown. Fire-and-forget; the store never throws.
+        const lastUser = this._prefetch.getLatestUserMessage(req.body?.messages)
+          || (req.body?.prompt ? String(req.body.prompt) : '');
+        void this._sessions.append(req._sessionKey, lastUser, response.response);
+      }
 
       res.json(response);
     } catch (error) {
@@ -448,12 +470,30 @@ class AIServiceRouter {
     // ── Build message chain ───────────────────────────────────────────────
     // systemPrompt is the same across all vendors in the chain (use-case driven)
     const { systemPrompt, maxTokens, temperature } = vendorChain[0];
-    const promptBundle = this.promptComposer.compose({
+    let promptBundle = this.promptComposer.compose({
       useCase,
       runtimePrompt: systemPrompt || this._fallbackSystemPrompt(),
     });
 
     const messages = [];
+
+    // ── Conversation continuity (opt-in) ──────────────────────────────────
+    // Restored only for an identified caller that named a session, on a
+    // single-turn request. Never on the anonymous surface (no identity to
+    // scope by) and never on the pass-through lane (the caller owns that
+    // transcript, tool results included). Saved after the answer is
+    // sanitised, in routeToAIService.
+    const sessionId = SessionStore.sessionIdFrom(req);
+    const sessionKey = (!req._publicSurface && !toolPassthrough) ? SessionStore.keyFor(req, sessionId) : null;
+    let restoredTurns = [];
+    if (sessionKey) {
+      req._sessionKey = sessionKey;
+      req._sessionId = sessionId;
+      if (!callerSentHistory(incomingMessages)) {
+        restoredTurns = await this._sessions.load(sessionKey);
+      }
+      req._sessionTurnsRestored = restoredTurns.length;
+    }
 
     // The anonymous surface never enriches from memory. Without a credential
     // the prefetch would query with no auth headers, and a result returned to
@@ -471,6 +511,7 @@ class AIServiceRouter {
       messages.push({ role: 'system', content: prefetchBrief });
     }
 
+    if (restoredTurns.length > 0) messages.push(...restoredTurns);
     messages.push(...(toolPassthrough ? normaliseToolTranscript(incomingMessages) : incomingMessages));
 
     const callerSuppliedTools = Array.isArray(body.tools) && body.tools.length > 0;
@@ -521,8 +562,30 @@ class AIServiceRouter {
         : [],
     });
 
+    // The decision pass gets a guide built from exactly the tools offered,
+    // in the call syntax the serving vendor can actually use (native schema
+    // vs in-text protocol — see core/tool-guide.js). The synthesis passes
+    // below keep `promptBundle` WITHOUT the tool guide: the tools have
+    // already run, and re-advertising a call syntax there invites another
+    // call that this one-round loop cannot honour. Pass-through callers own
+    // their tool semantics (and run multiple rounds), so they get none.
+    const supportsNativeTools = (vendorId) => VENDOR_REGISTRY[vendorId]?.supportsNativeTools === true;
+    const sessionNote = buildSessionNote(restoredTurns.length);
+    const decisionBundle = toolPassthrough
+      ? promptBundle
+      : withToolGuide(promptBundle, { tools, supportsNativeTools, sessionNote });
+    promptBundle = withToolGuide(promptBundle, { tools: [], supportsNativeTools, sessionNote });
+
+    // A request that plainly needs the user's memory is steered to vendors
+    // with native tool calling first. The in-text protocol makes the others
+    // capable, not equal: native calls are structured and never mis-parsed.
+    // Order only — nothing is removed from the chain.
+    const preferNativeTools = !toolPassthrough && tools.length > 0
+      && wantsMemoryTools(incomingMessages, offeredToolNames(tools));
+
     const { adapterResponse, selectedVendor } = await this._chain.run({
-      useCase, messages, promptBundle, temperature, maxTokens, tools,
+      useCase, messages, promptBundle: decisionBundle, temperature, maxTokens, tools,
+      preferNativeTools,
       // Every vendor attempt in this request shares one wall-clock deadline.
       // Vendor timeouts are per-CALL, so without this a chain of individually
       // reasonable waits still overran the caller.

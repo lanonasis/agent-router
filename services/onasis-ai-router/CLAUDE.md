@@ -55,8 +55,8 @@ node --check server.js && node --check core/ai-service-router.js && node --check
 command curl -s http://127.0.0.1:8000/health
 ```
 
-There is no test suite for this service. Verification is live-curl-and-read-the-logs; see "How to verify
-a change" below.
+`npm test` runs the offline suite (node:test, no network). Live verification is still
+curl-and-read-the-logs; see "How to verify a change" below.
 
 ## Architecture
 
@@ -442,6 +442,23 @@ traffic, so it is deliberately **not** part of the structural merge — it needs
   both the path resolver AND `code.run_command`'s argument list (closes the shell-read
   bypass against `.env.production` — the path resolver only ever validated `cwd`,
   never the arguments `cat`/`grep`/`find`/etc. take as parameters).
+- **Memory toolset and the per-request tool guide (2026-11-02).** Default read-only set is
+  `memory.search` (semantic), `memory.list` (date-ordered, content hydrated server-side by per-id GET —
+  the list endpoint returns metadata only and the loop has one round) and `memory.get`. Results are
+  compacted (`ToolLoop.compactMemoryResult`) so whole records fit the budget instead of being cut
+  mid-JSON; `memory.list` has its own `MEMORY_LIST_RESULT_MAX_CHARS` (12000). `core/tool-guide.js`
+  appends a guide built from the tools ACTUALLY offered — names, when to use which, "never ask the user
+  to run commands" — to the decision pass only (synthesis passes don't get it). Vendors with
+  `supportsNativeTools: false` (pi) also get an in-text call protocol (`<tool_call>{json}</tool_call>`),
+  which `vendors/_shared/tool-markup.js` already parses; calls still go through the offered-tools filter
+  and the ROUTER's tool loop — Pi's own tools stay off (`--no-tools`). `core/tool-affinity.js` detects
+  memory intent and `ChainExecutor.run({preferNativeTools})` stably moves native-tool vendors first
+  (order only, nothing removed). Root cause it fixes: the Slack concierge answering "run it yourself and
+  paste the output" whenever the chain landed on pi (reproduced live 2 of 3, 2026-11-02).
+- **Conversation continuity (`core/session-store.js`, 2026-11-02).** Opt-in `session_id` /
+  `X-Onasis-Session`; key = auth_id + org + session id; Redis when configured, in-process fallback on
+  any Redis error; TTL/turn/char caps via `SESSION_*`. Restored only when the caller sent a single turn;
+  never on the public surface or `tool-proxy`. Saved in `routeToAIService` after sanitisation.
 - **`memory.*` tools** have NO offered-tools/trusted-identity gate — they dispatch directly whenever
   offered. The tool *definition itself* is the only control. `memory.write` (mutating) is therefore
   withheld by default from every question-answering use case — offered only on `repl-nlp` (explicitly

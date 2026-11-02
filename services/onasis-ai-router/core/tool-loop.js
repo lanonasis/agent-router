@@ -29,11 +29,16 @@ class ToolLoop {
   // previously lived as a static on AIServiceRouter, which is out of scope in
   // this file — referencing it here threw "AIServiceRouter is not defined" at
   // runtime on every tool-bearing request.
-  static READ_ONLY_MEMORY_TOOL_NAMES = new Set(['memory.search', 'memory.get']);
+  static READ_ONLY_MEMORY_TOOL_NAMES = new Set(['memory.search', 'memory.list', 'memory.get']);
+
+  // Upper bound on memory.list. The list endpoint returns metadata only, so
+  // every entry costs one hydration fetch; 20 keeps that bounded and still
+  // covers every "last N entries" request observed from the concierges.
+  static MEMORY_LIST_MAX = 20;
 
   constructor({
     apiBaseUrl, memorySearchPath, memoryGetPath, memoryWritePath, memoryBatchGetPath,
-    memoryPrefetchTopK, routerTimeoutMs, maxToolResultChars, toolSummarizeEnabled,
+    memoryListPath, memoryPrefetchTopK, routerTimeoutMs, maxToolResultChars, toolSummarizeEnabled,
     ollamaModel, ollamaToolModel, ollamaBaseUrl, ollamaChatPath,
     buildAuthHeaders, extractAssistantMessage, logger,
   }) {
@@ -42,6 +47,9 @@ class ToolLoop {
     this.memoryGetPath = memoryGetPath;
     this.memoryWritePath = memoryWritePath;
     this.memoryBatchGetPath = memoryBatchGetPath;
+    // GET, metadata only (no `content`), sortable by updated_at/created_at.
+    // Verified live 2026-11-02 against api.lanonasis.com.
+    this.memoryListPath = memoryListPath || '/api/v1/memories/list';
     this.memoryPrefetchTopK = memoryPrefetchTopK;
     this.routerTimeoutMs = routerTimeoutMs;
     this.maxToolResultChars = maxToolResultChars;
@@ -92,20 +100,28 @@ class ToolLoop {
     return requested.filter((t) => permitted.has(t?.function?.name || t?.name));
   }
 
+  // Descriptions are written for the MODEL, not for humans: they say when to
+  // pick each tool. One-line descriptions ("Search memories using semantic
+  // vector search") left models unable to answer "show my last 10 entries" —
+  // semantic search has no notion of recency — and they told the user to run
+  // a CLI by hand instead. Observed on the Slack concierge 2026-11-02.
   getToolDefinitions() {
     return [
       {
         type: 'function',
         function: {
           name: 'memory.search',
-          description: 'Search memories using semantic vector search',
+          description: 'Semantic search over the user\'s saved memories. Use when the user asks about a topic, '
+            + 'project, decision, person or keyword ("what do I know about X", "find notes on Y"). '
+            + 'Returns the best-matching memories with id, title, type, tags, dates, a content excerpt and a similarity score. '
+            + 'Not for "latest/recent/last N" requests — use memory.list for those.',
           parameters: {
             type: 'object',
             properties: {
-              query: { type: 'string' },
-              topK: { type: 'integer', minimum: 1, maximum: 50 },
-              memory_type: { type: 'string' },
-              tags: { type: 'array', items: { type: 'string' } }
+              query: { type: 'string', description: 'Natural-language description of what to find.' },
+              topK: { type: 'integer', minimum: 1, maximum: 50, description: 'How many results (default 8).' },
+              memory_type: { type: 'string', enum: ['context', 'project', 'knowledge', 'reference', 'personal', 'workflow'], description: 'Optional type filter.' },
+              tags: { type: 'array', items: { type: 'string' }, description: 'Optional: only memories carrying any of these tags.' }
             },
             required: ['query']
           }
@@ -114,12 +130,32 @@ class ToolLoop {
       {
         type: 'function',
         function: {
-          name: 'memory.get',
-          description: 'Fetch one or more memories by id',
+          name: 'memory.list',
+          description: 'List the user\'s memories in date order, newest first by default, WITH their content. '
+            + 'Use for "latest", "recent", "last N entries", "what did I save today/this week", or to browse by type or tag. '
+            + 'Returns id, title, type, tags, created/updated dates and content excerpts, ready to summarise.',
           parameters: {
             type: 'object',
             properties: {
-              ids: { type: 'array', items: { type: 'string' } }
+              limit: { type: 'integer', minimum: 1, maximum: ToolLoop.MEMORY_LIST_MAX, description: 'How many entries (default 10, max 20).' },
+              order: { type: 'string', enum: ['newest', 'oldest'], description: 'Sort direction (default newest).' },
+              sort_by: { type: 'string', enum: ['updated_at', 'created_at'], description: 'Date field to sort on (default updated_at).' },
+              memory_type: { type: 'string', enum: ['context', 'project', 'knowledge', 'reference', 'personal', 'workflow'], description: 'Optional type filter.' },
+              tags: { type: 'array', items: { type: 'string' }, description: 'Optional: only memories carrying any of these tags.' }
+            }
+          }
+        }
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'memory.get',
+          description: 'Fetch the full content of specific memories by id. Use after memory.search or memory.list when '
+            + 'an excerpt is not enough, or when the user names a memory id.',
+          parameters: {
+            type: 'object',
+            properties: {
+              ids: { type: 'array', items: { type: 'string' }, description: 'Memory ids (full UUIDs) to fetch.' }
             },
             required: ['ids']
           }
@@ -129,13 +165,13 @@ class ToolLoop {
         type: 'function',
         function: {
           name: 'memory.write',
-          description: 'Create a memory entry',
+          description: 'Save a new memory for the user. Only when the user explicitly asks to save, remember or note something.',
           parameters: {
             type: 'object',
             properties: {
               title: { type: 'string' },
               content: { type: 'string' },
-              memory_type: { type: 'string' },
+              memory_type: { type: 'string', enum: ['context', 'project', 'knowledge', 'reference', 'personal', 'workflow'] },
               tags: { type: 'array', items: { type: 'string' } },
               metadata: { type: 'object' }
             },
@@ -400,6 +436,10 @@ class ToolLoop {
       const payload = await this.toolMemorySearch(args, req);
       return { name: toolName, payload };
     }
+    if (toolName === 'memory.list') {
+      const payload = await this.toolMemoryList(args, req);
+      return { name: toolName, payload };
+    }
     if (toolName === 'memory.get') {
       const payload = await this.toolMemoryGet(args, req);
       return { name: toolName, payload };
@@ -532,7 +572,7 @@ class ToolLoop {
         });
       }
       const result = await response.json();
-      return this.formatToolPayload(result);
+      return this.formatToolPayload(this.compactMemoryResult(result));
     } catch (error) {
       // Re-throw HTTP-level failures (with statusCode) so the retry wrapper catches them.
       // Only non-HTTP errors (network, timeout) are treated as final here.
@@ -578,15 +618,19 @@ class ToolLoop {
               responseBody: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
             });
           }
-          return this.formatToolPayload({
-            error: `Memory service returned ${response.status}`,
-            category: 'client_error',
-            message: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
-            status: response.status
+          // A 4xx from the batch path usually means the path does not exist
+          // on this memory API: .env.template shipped
+          // MEMORY_BATCH_GET_PATH=/api/v1/memories/batch, which the live API
+          // reads as GET-by-id "batch" and refuses (verified 2026-11-02). Fall
+          // through to per-id fetches rather than hand the model an error for
+          // memories that do exist.
+          this.logger.warn('memory.get batch path refused — falling back to per-id fetches', {
+            status: response.status,
           });
+        } else {
+          const result = await response.json();
+          return this.formatToolPayload(this.compactMemoryResult(result));
         }
-        const result = await response.json();
-        return this.formatToolPayload(result);
       }
 
       const results = await Promise.all(ids.map(async (id) => {
@@ -611,13 +655,187 @@ class ToolLoop {
         return data.data || data;
       }));
 
-      return this.formatToolPayload({ data: results });
+      return this.formatToolPayload(this.compactMemoryResult({ data: results }));
     } catch (error) {
       // Re-throw HTTP-level failures so the retry wrapper catches them.
       if (error.statusCode) throw error;
       this.logger.warn('memory.get tool failed', { error: error.message });
       return JSON.stringify({ error: 'Memory get failed', message: error.message });
     }
+  }
+
+  /**
+   * Recent memories, newest first, with content.
+   *
+   * The list endpoint returns metadata only, and this router runs exactly one
+   * tool round — so a model that listed and then wanted to read would have no
+   * second turn to do it in. Hydration therefore happens HERE, server-side,
+   * inside the one tool call: list ids, then fetch each body (bounded
+   * concurrency), and return excerpts sized so the whole set fits the tool
+   * result budget instead of being cut mid-record.
+   */
+  async toolMemoryList(args, req) {
+    const limit = Math.min(
+      ToolLoop.MEMORY_LIST_MAX,
+      Math.max(1, parseInt(args.limit, 10) || 10),
+    );
+    const params = new URLSearchParams({
+      limit: String(limit),
+      sortBy: args.sort_by === 'created_at' ? 'created_at' : 'updated_at',
+      sortOrder: args.order === 'oldest' ? 'asc' : 'desc',
+    });
+    if (typeof args.memory_type === 'string' && args.memory_type) params.set('type', args.memory_type);
+    if (Array.isArray(args.tags) && args.tags.length > 0) params.set('tags', args.tags.join(','));
+
+    const authHeaders = { 'Content-Type': 'application/json', ...this.buildAuthHeaders(req) };
+
+    let listed;
+    try {
+      listed = await this._fetchJson(`${this.apiBaseUrl}${this.memoryListPath}?${params}`, {
+        method: 'GET', headers: authHeaders,
+      });
+    } catch (error) {
+      if (error.statusCode >= 500) throw error; // retry wrapper
+      if (error.statusCode) {
+        return this.formatToolPayload({
+          error: `Memory service returned ${error.statusCode}`,
+          category: 'client_error',
+          message: error.responseBody,
+          status: error.statusCode,
+        });
+      }
+      this.logger.warn('memory.list tool failed', { error: error.message });
+      return JSON.stringify({ error: 'Memory list failed', message: error.message });
+    }
+
+    const rows = Array.isArray(listed?.data) ? listed.data : [];
+    const total = listed?.pagination?.total;
+    if (rows.length === 0) {
+      return JSON.stringify({ data: [], total: total ?? 0, note: 'No memories matched.' });
+    }
+
+    // Hydrate bodies. A failed hydration keeps the row (title/tags/dates are
+    // still useful) and says so, rather than dropping it from "the last 10".
+    const hydrated = await this._mapBounded(rows, 5, async (row) => {
+      if (typeof row.content === 'string' && row.content) return row;
+      try {
+        const full = await this._fetchJson(
+          `${this.apiBaseUrl}${this.memoryGetPath}/${encodeURIComponent(row.id)}`,
+          { method: 'GET', headers: authHeaders },
+        );
+        return { ...row, ...(full?.data || full || {}) };
+      } catch (error) {
+        return { ...row, content_unavailable: true };
+      }
+    });
+
+    // A larger budget than single lookups: this one result IS the material a
+    // "summarise my last N" answer is written from.
+    const listBudget = parseInt(process.env.MEMORY_LIST_RESULT_MAX_CHARS || '12000', 10);
+    return this.formatToolPayload(this.compactMemoryResult(
+      { data: hydrated, total },
+      { order: params.get('sortOrder') === 'asc' ? 'oldest_first' : 'newest_first', maxChars: listBudget },
+    ), { maxChars: listBudget });
+  }
+
+  /** fetch + JSON with the router's tool timeout; throws {statusCode} on non-2xx. */
+  async _fetchJson(url, init) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.routerTimeoutMs);
+    try {
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      if (!response.ok) {
+        let errorInfo;
+        try { errorInfo = await response.json(); } catch { errorInfo = {}; }
+        throw Object.assign(new Error(`Memory service error ${response.status}`), {
+          statusCode: response.status,
+          responseBody: errorInfo.error || errorInfo.message || `HTTP ${response.status}`,
+        });
+      }
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async _mapBounded(items, concurrency, fn) {
+    const out = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i], i);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+    return out;
+  }
+
+  /**
+   * Reduce memory API records to what a model needs to answer.
+   *
+   * The API returns ~20 fields per record (user/org/owner/team/channel ids,
+   * access modes, counters). Serialised whole, a 6 KB tool budget held about
+   * three records and was then cut mid-JSON with an ellipsis — the model got
+   * invalid JSON and fewer memories than the user asked for. Keeping the
+   * answer-relevant fields and sizing content excerpts to the budget means
+   * every requested record arrives, complete and parseable.
+   *
+   * Non-record payloads (errors, unexpected shapes) pass through unchanged.
+   */
+  compactMemoryResult(result, { order, maxChars } = {}) {
+    const rows = Array.isArray(result?.data) ? result.data
+      : Array.isArray(result?.results) ? result.results
+      : Array.isArray(result?.memories) ? result.memories
+      : null;
+    if (!rows) return result;
+
+    const limit = maxChars || this.maxToolResultChars;
+    const bodies = [];
+    const data = rows.filter((r) => r && typeof r === 'object').map((r) => {
+      bodies.push(typeof r.content === 'string' ? r.content.replace(/\s+/g, ' ').trim() : '');
+      const out = {
+        id: r.id,
+        title: r.title,
+        memory_type: r.memory_type || r.type,
+        tags: Array.isArray(r.tags) && r.tags.length ? r.tags.slice(0, 6) : undefined,
+        created_at: typeof r.created_at === 'string' ? r.created_at.slice(0, 16) : r.created_at,
+        updated_at: r.updated_at && r.updated_at !== r.created_at && typeof r.updated_at === 'string'
+          ? r.updated_at.slice(0, 16) : undefined,
+        similarity: typeof r.similarity_score === 'number' ? Number(r.similarity_score.toFixed(3)) : undefined,
+        content_unavailable: r.content_unavailable || undefined,
+      };
+      for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
+      return out;
+    });
+
+    const compact = { data, count: data.length };
+    if (Number.isFinite(result?.total)) compact.total = result.total;
+    else if (Number.isFinite(result?.pagination?.total)) compact.total = result.pagination.total;
+    if (order) compact.order = order;
+
+    // Measure what the metadata actually costs, then give every record an
+    // equal share of what remains. Short bodies return their unused share to
+    // the pool so longer ones get more. The 0.97 is slack for JSON escaping.
+    let remaining = Math.floor(limit * 0.97) - JSON.stringify(compact).length - data.length * 40;
+    const order_ = bodies.map((b, i) => [b.length, i]).sort((a, b) => a[0] - b[0]);
+    let left = order_.length;
+    for (const [len, i] of order_) {
+      const share = Math.max(0, Math.floor(remaining / Math.max(1, left)));
+      left -= 1;
+      const body = bodies[i];
+      if (!body) continue;
+      if (len <= share) {
+        data[i].content = body;
+        remaining -= len;
+      } else {
+        const cut = Math.max(120, share);
+        data[i].content = `${body.slice(0, cut)}…`;
+        data[i].content_truncated = true;
+        remaining -= cut;
+      }
+    }
+    return compact;
   }
 
   async toolMemoryWrite(args, req) {
@@ -988,10 +1206,10 @@ class ToolLoop {
     }
   }
 
-  formatToolPayload(result) {
+  formatToolPayload(result, { maxChars } = {}) {
     let payload = JSON.stringify(result);
 
-    if (payload.length <= this.maxToolResultChars) {
+    if (payload.length <= (maxChars || this.maxToolResultChars)) {
       return payload;
     }
 

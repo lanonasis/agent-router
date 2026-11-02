@@ -21,10 +21,10 @@
   "dependencies": {
     "@redis-iris/agent-memory": "^0.2.0",
     "dotenv": "^16.3.1",
-    "express": "^4.18.2",
+    "express": "^4.22.3",
     "http-proxy-middleware": "^3.0.5",
     "ioredis": "^5.11.1",
-    "undici": "^7.29.0",
+    "undici": "^7.30.1",
     "winston": "^3.11.0",
     "ws": "^8.19.0",
     "zod": "^4.6.7"

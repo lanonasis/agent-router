@@ -149,7 +149,7 @@ class ChainExecutor {
    * @returns {{ adapterResponse: object, selectedVendor: object }}
    * @throws the last vendor error when every vendor in the chain fails
    */
-  async run({ useCase, messages, promptBundle, temperature, maxTokens, tools, exclude, deadlineAt, requestId, emitEvent }) {
+  async run({ useCase, messages, promptBundle, temperature, maxTokens, tools, exclude, deadlineAt, requestId, emitEvent, preferNativeTools }) {
     const declaredChain = this._resolveChain(useCase);
 
     // `exclude` exists for the synthesis pass, which retries on a vendor OTHER
@@ -163,7 +163,19 @@ class ChainExecutor {
 
     // Declared order is preference; the scoreboard filters open circuits and
     // demotes slow-tail vendors based on what they have actually been doing.
-    const preferred = this._scoreboard.orderChain(eligible);
+    // Tool affinity: when the request needs a tool, vendors that return
+    // structured tool calls go first. A STABLE partition after the scoreboard
+    // has ordered the chain, so health/latency ordering is kept within each
+    // group and nothing is removed — a tools-needing request on a day when
+    // every native vendor is down still reaches the others (which can call
+    // tools through the in-text protocol, core/tool-guide.js).
+    const scored = this._scoreboard.orderChain(eligible);
+    const preferred = preferNativeTools
+      ? [
+        ...scored.filter((v) => VENDOR_REGISTRY[v._vendorId]?.supportsNativeTools === true),
+        ...scored.filter((v) => VENDOR_REGISTRY[v._vendorId]?.supportsNativeTools !== true),
+      ]
+      : scored;
 
     if (declaredChain.length === 0 || preferred.length === 0) {
       // An exclusion emptying the chain is an ordinary "nothing else to try",

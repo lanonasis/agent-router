@@ -7,7 +7,7 @@
   "roleTemplate": "generic",
   "identityTemplate": "IDENTITY-LAYER.md",
   "policyDocuments": ["policies.md"],
-  "allowedTools": ["memory.search", "memory.get"],
+  "allowedTools": ["memory.search", "memory.list", "memory.get"],
   "memoryMode": "user-scoped",
   "allowedMessageRoles": ["user", "assistant", "tool"],
   "allowedContextFields": ["locale", "surface"],
