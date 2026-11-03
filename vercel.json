@@ -1,6 +1,11 @@
 {
-  "buildCommand": "bun run --cwd apps/onasis-agent-haven build",
+  "buildCommand": "bun install --frozen-lockfile && bun run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "installCommand": "bun install --frozen-lockfile"
+  "installCommand": "bun install --frozen-lockfile",
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/assets/(.*)", "dest": "/assets/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }
