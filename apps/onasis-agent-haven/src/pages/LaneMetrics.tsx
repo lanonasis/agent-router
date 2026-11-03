@@ -132,6 +132,7 @@ export default function LaneMetrics() {
           <div className="font-semibold">
             {err.kind === "no-credential" && "Add a router credential to see lane performance"}
             {err.kind === "unauthorized" && "The router rejected the credential"}
+            {err.kind === "refused" && "The router refused the request"}
             {err.kind === "not-deployed" && "This router doesn't expose request history yet"}
             {err.kind === "unreachable" && "The router can't be reached from this browser"}
             {err.kind === "http" && "The router returned an error"}

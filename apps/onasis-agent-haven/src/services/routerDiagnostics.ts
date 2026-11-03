@@ -141,9 +141,15 @@ export async function runRouterDiagnostics(settings: RouterSettings): Promise<Di
     const { res, ms } = await timedFetch(`${base}/ai-health`, { headers: { Accept: "application/json", ...routerAuthHeaders(settings) } }, AUTH_TIMEOUT_MS);
     if (res.ok) {
       checks.push({ id: "auth", label: "Signed-in access", state: "pass", detail: `Accepted (${cred === "api-key" ? "API key" : "session token"}) in ${ms} ms` });
-    } else if (res.status === 401 || res.status === 403) {
+    } else if (res.status === 401) {
       checks.push({ id: "auth", label: "Signed-in access", state: "fail", detail: `Credential rejected (HTTP ${res.status}).`, fix: "Check the API key, or sign in again." });
       checks.push({ id: "activity", label: "Activity feed", state: "skip", detail: "Needs an accepted credential." });
+      return checks;
+    } else if (res.status === 403) {
+      // /ai-health is auth-gated: its middleware answers 401 or 503, so a 403 is
+      // not a documented outcome. Do not blame the credential — it was accepted.
+      checks.push({ id: "auth", label: "Signed-in access", state: "fail", detail: `Refused by the router (HTTP ${res.status}) — the credential was accepted, but the router declined this request.`, fix: "This isn't a credential problem — the key was accepted and the request refused. /ai-health normally answers 401 or 503, so check the router's access policy (or the proxy in front of it) rather than the API key." });
+      checks.push({ id: "activity", label: "Activity feed", state: "skip", detail: "Needs signed-in access." });
       return checks;
     } else {
       checks.push({ id: "auth", label: "Signed-in access", state: "warn", detail: `HTTP ${res.status} — the auth service may be slow or down.` });

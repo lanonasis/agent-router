@@ -5,7 +5,7 @@ import { aggregateLaneStats } from "@/lib/laneStats";
 
 export const ACTIVITY_WINDOW = 200;
 
-type ErrKind = "no-credential" | "unauthorized" | "not-deployed" | "unreachable" | "http";
+type ErrKind = "no-credential" | "unauthorized" | "refused" | "not-deployed" | "unreachable" | "http";
 export class LaneViewError extends Error {
   constructor(public kind: ErrKind, message: string) {
     super(message);

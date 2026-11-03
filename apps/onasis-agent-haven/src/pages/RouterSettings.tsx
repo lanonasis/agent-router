@@ -104,7 +104,8 @@ export default function RouterSettings() {
             </Button>
           </div>
           <p className="text-xs text-fgMuted">
-            Used only for the activity feed and signed-in health check. Stored in this browser only.{" "}
+            Used only for the activity feed and signed-in health check. Kept for this browser
+            session only — you'll need to re-enter it after closing the browser.{" "}
             {cred === "session" && !apiKey.trim() && "Without a key, your signed-in session is used."}
           </p>
         </div>

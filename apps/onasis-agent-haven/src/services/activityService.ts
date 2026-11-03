@@ -47,7 +47,7 @@ export interface ActivityFeed {
 }
 
 export class ActivityError extends Error {
-  constructor(public kind: "no-credential" | "unauthorized" | "not-deployed" | "unreachable" | "http", message: string) {
+  constructor(public kind: "no-credential" | "unauthorized" | "refused" | "not-deployed" | "unreachable" | "http", message: string) {
     super(message);
   }
 }
@@ -65,7 +65,8 @@ export async function fetchActivity(settings: RouterSettings, limit = 50): Promi
   } catch {
     throw new ActivityError("unreachable", "The router can't be reached from this browser.");
   }
-  if (res.status === 401 || res.status === 403) throw new ActivityError("unauthorized", "The router rejected the credential.");
+  if (res.status === 401) throw new ActivityError("unauthorized", "The router rejected the credential.");
+  if (res.status === 403) throw new ActivityError("refused", "The router refused the request (HTTP 403) — the credential was accepted but is not permitted to read activity.");
   if (res.status === 404) throw new ActivityError("not-deployed", "The router doesn't have the activity feed yet.");
   if (!res.ok) throw new ActivityError("http", `Router answered HTTP ${res.status}.`);
   return res.json();

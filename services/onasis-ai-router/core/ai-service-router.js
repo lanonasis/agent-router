@@ -59,6 +59,38 @@ const { callerMemoryHeaders, warnIfRetiredFallbackConfigured } = require('./memo
 
 // Node 18+ has native fetch globally available; no node-fetch needed.
 
+// Vendor-neutral public service descriptor for GET /ai-services.
+//
+// HARD INVARIANT (services/onasis-ai-router/CLAUDE.md): vendor identifiers,
+// model names and keys must NEVER reach a client response. getServiceMapping()
+// is for INTERNAL dispatch only — its `type: 'ollama'` selects the chat handler
+// — and must never be serialised. `/ai-services` previously leaked the internal
+// mapping wholesale (type: 'ollama' + "Ollama" in every description) plus an
+// `ai_provider: 'Ollama'` field, the same disclosure already removed from the
+// root `/` route (server.js). It was also stale: `ollama` is deprecated and the
+// chains now lead with pi/minimax, with lmstudio as the local last-resort
+// fallback (see vendors/index.js).
+//
+// The legacy `ollama` service KEY is deliberately absent from the public list:
+// the alias name itself is a vendor identifier, so advertising it would leak it
+// too. It is NOT removed from getServiceMapping(), so POST /api/ollama still
+// dispatches as before — the alias is simply no longer published. (No caller of
+// /ai-services or /api/ollama exists in the repo.)
+//
+// The field is named `model` (not `provider`) so it agrees with the root `/`
+// payload: server.js publishes `model: openaiCompat.MODEL_ID` there. Calling it
+// `provider` here collided with server.js' `provider: openaiCompat.MODEL_OWNER`,
+// leaving one field named `provider` meaning 'model id' on one surface and
+// 'owner' on the other. The value is the Onasis-owned public model name, not an
+// upstream vendor.
+function describeServices() {
+  const model = openaiCompat.MODEL_ID; // the Onasis-owned public model name
+  return {
+    'ai-chat': { model, description: 'Onasis AI chat with memory tools' },
+    'chat': { model, description: 'Onasis AI chat with memory tools' },
+  };
+}
+
 class AIServiceRouter {
   constructor(config) {
     this.ollamaBaseUrl = config.ollamaBaseUrl || process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
@@ -265,7 +297,9 @@ class AIServiceRouter {
     });
   }
 
-  // Service mapping: Ollama-first
+  // Service mapping for INTERNAL dispatch only. Names the upstream `type` so
+  // routeToAIService can pick the handler — NEVER serialise this to a client
+  // (see describeServices() for the public, vendor-neutral descriptor).
   getServiceMapping() {
     return {
       'ai-chat': { type: 'ollama', description: 'Ollama AI chat with memory tools' },
@@ -286,7 +320,9 @@ class AIServiceRouter {
         error: {
           message: `AI service '${service}' not found`,
           code: 'SERVICE_NOT_FOUND',
-          available_services: Object.keys(serviceMapping)
+          // Public, vendor-neutral names only — never the internal dispatch
+          // keys (which name the upstream vendor).
+          available_services: Object.keys(describeServices())
         }
       });
     }
@@ -1892,11 +1928,12 @@ class AIServiceRouter {
     router.get('/ai-services',
       this.authenticateRequest,
       (req, res) => {
-        const services = this.getServiceMapping();
+        // Sanitised, vendor-neutral descriptor — no upstream vendor id, model
+        // name or key (see describeServices()). Same rule as the root `/`.
+        const services = describeServices();
         res.json({
           available_services: services,
           auth_id: req.uai?.authId,
-          ai_provider: 'Ollama',
           total_services: Object.keys(services).length
         });
       }
@@ -2276,3 +2313,7 @@ data: ${JSON.stringify({ error: { message: chunk.error, code: 'STREAMING_FALLBAC
 }
 
 module.exports = AIServiceRouter;
+// Attached as a STATIC on the class (not an instance method) so
+// test/ai-services-no-vendor.test.js can read it as AIServiceRouter.describeServices;
+// the route itself calls the module-level function directly.
+module.exports.describeServices = describeServices;

@@ -145,6 +145,7 @@ export default function RouterActivity() {
           <div className="font-semibold">
             {err.kind === "no-credential" && "Add a router credential to see activity"}
             {err.kind === "unauthorized" && "The router rejected the credential"}
+            {err.kind === "refused" && "The router refused the request"}
             {err.kind === "not-deployed" && "The router doesn't have the activity feed yet"}
             {err.kind === "unreachable" && "The router can't be reached from this browser"}
             {err.kind === "http" && "The router returned an error"}

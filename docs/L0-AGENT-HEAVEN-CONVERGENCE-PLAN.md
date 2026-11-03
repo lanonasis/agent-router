@@ -1,8 +1,10 @@
 # L0 Agent Heaven and Router Convergence Plan
 
 **Status:** approved architecture. Phase 1 complete. Phase 3's enforcement
-half shipped and verified live; profile *activation* blocked on auth-gateway.
-Phase 2 has its regression baseline; the corpus merge is outstanding.
+half shipped and verified live, and the auth-gateway blocker on profile
+*activation* cleared on 2026-09-09 (`8894492`); what remains is provisioning —
+entitling credentials and writing the remaining manifests. Phase 2 has its
+regression baseline; the corpus merge is outstanding.
 
 See `docs/superpowers/specs/2026-08-27-open-findings-tracker.md` #17-#19 for
 what was verified and how.
@@ -73,11 +75,14 @@ context fields, and limits. It must be immutable for a deployed version.
 ### 3. Entitled profile activation
 
 - Extend UAI resolution with verified application identity and profile
-  entitlements. **Blocked, auth-gateway (onasis-core).** Verified live
-  2026-09-03: `/v1/auth/resolve` returns no `applicationId` and no
-  entitlements, and `organizationId` is empty for api_key auth. Until this
-  lands, every profile request is refused with `entitlements_unavailable` —
-  the router side is installed and failing closed by design.
+  entitlements. **Done — auth-gateway `8894492`, deployed 2026-09-09.**
+  `/v1/auth/resolve` now publishes `applicationId` and `applicationEntitlements`
+  (the `profile:`-prefixed subset of the credential's scopes, prefix stripped).
+  Verified live 2026-09-10: a request naming `l0-concierge` reaches the
+  entitlement comparison and is refused with `profile_not_entitled`, not
+  `entitlements_unavailable` — so real entitlement data is arriving and being
+  compared. The router side is installed and fails closed when the gateway
+  returns no entitlement data at all.
 - Add a router profile resolver that accepts only active manifests whose
   application/profile pair UAI authorizes.
 - Compose hidden system instructions server-side; reject public `system` and

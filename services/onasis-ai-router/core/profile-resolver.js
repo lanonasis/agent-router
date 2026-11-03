@@ -22,8 +22,23 @@ const path = require('path');
  * publishing applicationEntitlements from UAI. Verified live 2026-09-10: a
  * request for l0-concierge now returns profile_not_entitled, which is only
  * reachable past the entitlements-null guard — so real entitlement data is
- * arriving and being compared. Entitlements are the `profile:` prefixed subset
- * of an API key's own permissions array.
+ * arriving and being compared.
+ *
+ * Entitlements reach the router with the `profile:` prefix ALREADY STRIPPED.
+ * That is the auth-gateway's contract, defined and verified in the AUTH-GATEWAY
+ * repo (not this one):
+ *   - services/auth-gateway/src/routes/resolve.routes.ts (~L49-50) — the
+ *     `profile:`-namespaced subset of the credential's scopes, "prefix stripped".
+ *   - services/auth-gateway/src/services/api-key.service.ts (~L705-733) —
+ *     `PROFILE_SCOPE_PREFIX = 'profile:'` and `extractProfileEntitlements` does
+ *     `out.add(scope.slice(PROFILE_SCOPE_PREFIX.length))`.
+ *   - services/auth-gateway/tests/unit/resolve.routes.test.ts (~L123) — expects
+ *     `applicationEntitlements: ['l0-concierge']` (bare).
+ * The comparison below therefore deliberately tests bare `<profileId>` or
+ * `<applicationId>:<profileId>` values only, and fails closed (profile_not_entitled)
+ * on any other form — e.g. a still-prefixed `profile:l0-concierge` is NOT treated
+ * as a grant, so a gateway that ever emitted prefixed values could not silently
+ * widen activation. Pinned in test/profile-resolver.test.js.
  *
  * The resolver is therefore live, not inert. What remains is provisioning:
  * entitling credentials and writing the manifests. The alternative — leaving

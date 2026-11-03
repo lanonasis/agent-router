@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { routerAuthHeaders, type RouterSettings } from "@/lib/routerSettings";
 import { fetchRouterCatalog, RouterCatalogError, type RouterCatalog } from "@/services/routerCatalog";
 
-export type RunErrorKind = "no-credential" | "unauthorized" | "bad-request" | "unavailable" | "http" | "network" | "bad-response";
+export type RunErrorKind = "no-credential" | "unauthorized" | "refused" | "bad-request" | "unavailable" | "http" | "network" | "bad-response";
 
 export interface ChatRunResult {
   ok: boolean;
@@ -54,6 +54,40 @@ function errorMessageFrom(data: unknown): string | null {
   if (e && typeof e === "object" && typeof (e as Record<string, unknown>).message === "string") return (e as Record<string, string>).message;
   if (typeof d.message === "string") return d.message;
   return null;
+}
+
+/** Reads the router's machine-readable code (`error.code`). */
+function errorCodeFrom(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const e = (data as Record<string, unknown>).error;
+  if (e && typeof e === "object" && typeof (e as Record<string, unknown>).code === "string") {
+    return (e as Record<string, string>).code;
+  }
+  return null;
+}
+
+/**
+ * Maps the router's 403 `error.code` to the operator's next step. A 403 covers
+ * unrelated conditions — entitlement, provisioning, a degraded auth gateway —
+ * so generic "check the entitlement" advice misdirects. Returns the explanation
+ * sentence, or null for a code we cannot diagnose; the caller prefixes the
+ * HTTP status and appends the raw `Router said:` message.
+ */
+function refusedExplanation(code: string | null): string | null {
+  switch (code) {
+    case "profile_not_entitled":
+      return "The credential is valid but is not entitled to this profile — ask the platform team to grant the `profile:<id>` scope on the credential (you cannot self-serve it).";
+    case "profile_not_active":
+      return "The profile exists but is not `active` (draft or retired) — a provisioning problem, not an entitlement one.";
+    case "profile_application_mismatch":
+      return "The named application is not this profile's own application.";
+    case "entitlements_unavailable":
+      return "The auth gateway returned no entitlement data at all — a gateway problem, not the API key. Retry, and if it persists check gateway health.";
+    case "tool_passthrough_not_authorized":
+      return "This credential is not allowlisted for the tool pass-through lane.";
+    default:
+      return null;
+  }
 }
 
 export async function sendRouterChat(settings: RouterSettings, req: ChatRequest, signal?: AbortSignal): Promise<ChatRunResult> {
@@ -105,13 +139,24 @@ export async function sendRouterChat(settings: RouterSettings, req: ChatRequest,
   }
 
   const serverMsg = errorMessageFrom(data);
-  if (res.status === 401 || res.status === 403) {
+  const serverCode = errorCodeFrom(data);
+  if (res.status === 401) {
     return {
       ...common,
       ok: false,
       answer: "",
       errorKind: "unauthorized",
-      error: `The router rejected the credential (HTTP ${res.status}). Add an API key in Settings.${serverMsg ? ` Router said: ${serverMsg}` : ""}`,
+      error: `The router rejected the credential (HTTP 401). Add an API key in Settings.${serverMsg ? ` Router said: ${serverMsg}` : ""}`,
+    };
+  }
+  if (res.status === 403) {
+    const explanation = refusedExplanation(serverCode);
+    return {
+      ...common,
+      ok: false,
+      answer: "",
+      errorKind: "refused",
+      error: `The router refused the request (HTTP 403${serverCode ? ` ${serverCode}` : ""}).${explanation ? ` ${explanation}` : ""}${serverMsg ? ` Router said: ${serverMsg}` : ""}`,
     };
   }
   if (res.status === 400) {

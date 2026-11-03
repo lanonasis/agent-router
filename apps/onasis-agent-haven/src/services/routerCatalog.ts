@@ -89,7 +89,7 @@ export interface LaneStatsResponse {
 
 export class RouterCatalogError extends Error {
   constructor(
-    public kind: "no-credential" | "unauthorized" | "not-deployed" | "unreachable" | "http",
+    public kind: "no-credential" | "unauthorized" | "refused" | "not-deployed" | "unreachable" | "http",
     message: string,
   ) {
     super(message);
@@ -103,7 +103,8 @@ async function call<T>(url: string, init: RequestInit): Promise<T> {
   } catch {
     throw new RouterCatalogError("unreachable", "The router can't be reached from this browser.");
   }
-  if (res.status === 401 || res.status === 403) throw new RouterCatalogError("unauthorized", "The router rejected the credential.");
+  if (res.status === 401) throw new RouterCatalogError("unauthorized", "The router rejected the credential.");
+  if (res.status === 403) throw new RouterCatalogError("refused", "The router refused the request (HTTP 403) — the credential was accepted but is not permitted for this endpoint.");
   if (res.status === 404) throw new RouterCatalogError("not-deployed", "This router version doesn't have this endpoint yet.");
   if (!res.ok) throw new RouterCatalogError("http", `Router answered HTTP ${res.status}.`);
   return res.json() as Promise<T>;

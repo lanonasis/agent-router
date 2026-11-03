@@ -5,9 +5,10 @@ const { createAuthMiddleware } = require('../core/middleware');
 const { ProfileResolver, PROFILE_HEADER } = require('../core/profile-resolver');
 
 // The gateway now returns applicationId + applicationEntitlements
-// (onasis-core 17ccce0). These tests pin the router half: that the middleware
-// carries them onto req.uai, and that the resolver's verdict changes only
-// because of them — never because of anything a caller sent.
+// (onasis-core 8894492, the entitlements commit deployed on main). These tests
+// pin the router half: that the middleware carries them onto req.uai, and that
+// the resolver's verdict changes only because of them — never because of
+// anything a caller sent.
 
 function stubFetch(body, headers = {}) {
   const h = new Map(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
