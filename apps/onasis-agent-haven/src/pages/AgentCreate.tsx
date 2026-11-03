@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowLeft, RotateCcw, FolderOpen } from 'lucide-react';
+import { ArrowLeft, RotateCcw, FolderOpen, Wand2, ChevronDown } from 'lucide-react';
 import { AgentDraft, AgentDraftInput, DEFAULT_DRAFT, agentDraftSchema, loadDrafts, SavedDraft } from '@/lib/agentDraftUtils';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -11,11 +11,19 @@ import AgentPreviewPanel from '@/components/agent-create/AgentPreviewPanel';
 import MarkdownImport from '@/components/agent-create/MarkdownImport';
 import DraftActions from '@/components/agent-create/DraftActions';
 import TemplatePicker from '@/components/agent-create/TemplatePicker';
+import { ProfileBuilder } from '@/components/profile-builder/ProfileBuilder';
+import { useRouterSettings } from '@/lib/routerSettings';
+import { useRouterCatalog } from '@/services/profileTestService';
+import type { ProfileManifest } from '@/lib/profileManifest';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 const AgentCreate = () => {
   const [pastedMarkdown, setPastedMarkdown] = useState('');
   const [savedDrafts, setSavedDrafts] = useState<SavedDraft[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState('blank');
+  const [profileManifest, setProfileManifest] = useState<ProfileManifest | null>(null);
+  const routerSettings = useRouterSettings();
+  const catalogState = useRouterCatalog(routerSettings);
 
   const form = useForm<AgentDraftInput, unknown, AgentDraft>({
     resolver: zodResolver(agentDraftSchema),
@@ -83,6 +91,26 @@ const AgentCreate = () => {
           </Button>
         </div>
       </div>
+
+      {/* Entry point: router profile manifest from a task description */}
+      <Collapsible className="mb-8 rounded-xl border border-border bg-card p-5">
+        <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 text-left">
+          <span className="flex items-center gap-2 text-sm font-medium text-fg">
+            <Wand2 className="h-4 w-4 text-brandPurple" aria-hidden="true" />
+            Generate router profile from a task
+          </span>
+          <ChevronDown className="h-4 w-4 text-fgMuted transition-transform group-data-[state=open]:rotate-180" aria-hidden="true" />
+        </CollapsibleTrigger>
+        <CollapsibleContent className="pt-4">
+          <ProfileBuilder
+            manifest={profileManifest}
+            onManifestChange={setProfileManifest}
+            catalog={catalogState.catalog}
+            catalogNote={catalogState.note}
+            settings={routerSettings}
+          />
+        </CollapsibleContent>
+      </Collapsible>
 
       {/* Template Picker */}
       <div className="mb-8 rounded-xl border border-border bg-card p-5">

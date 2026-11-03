@@ -33,6 +33,7 @@ dist-ssr
 # via `dotenvx run -f services/onasis-ai-router/.env.production` at deploy path)
 services/onasis-ai-router/.env.keys
 services/onasis-ai-router/.env.production
+services/onasis-ai-router/.env.test
 
 # Historically leaked to git history (untracked 2026-08-19, keys need rotation
 # regardless — see onasis-ai-router security audit) — never re-add these.
@@ -60,3 +61,6 @@ package-lock.json
 bun.lockb
 **/bun.lock
 !/bun.lock
+
+# Parallel-agent worktrees (local only)
+.claude/worktrees/

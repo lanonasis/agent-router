@@ -2,7 +2,7 @@
   "name": "onasis-shared-platform",
   "private": true,
   "version": "1.0.0",
-  "description": "Onasis shared platform monorepo — agent UI, AI router, shared contracts and model files",
+  "description": "Onasis shared platform monorepo \u2014 agent UI, AI router, shared contracts and model files",
   "workspaces": [
     "apps/*",
     "services/*",
@@ -15,8 +15,10 @@
     "preview": "bun run --cwd apps/onasis-agent-haven preview",
     "build:app": "bun run --cwd apps/onasis-agent-haven build",
     "router:start": "node services/onasis-ai-router/server.js",
-    "router:dev": "nodemon services/onasis-ai-router/server.js",
-    "check:agent-model-files": "python3 packages/agent-model-files/sync-source-of-truth.py --check && python3 packages/agent-model-files/sync-source-of-truth.py --check --output-dir apps/onasis-agent-haven/docs/agent_model_files"
+    "router:dev": "node --watch services/onasis-ai-router/server.js",
+    "check:agent-model-files": "python3 packages/agent-model-files/sync-source-of-truth.py --check && python3 packages/agent-model-files/sync-source-of-truth.py --check --output-dir apps/onasis-agent-haven/docs/agent_model_files",
+    "audit": "bun audit --ignore=GHSA-67mh-4wv8-2f99 --ignore=GHSA-g3hv-75wg-m249",
+    "audit:prod": "bun audit --production"
   },
   "overrides": {
     "postcss-selector-parser": "^6.1.5",

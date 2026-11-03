@@ -134,8 +134,7 @@ python3 packages/agent-model-files/sync-source-of-truth.py \
 Router tests run from the service directory:
 
 ```bash
-cd services/onasis-ai-router
-npm test
+bun run --cwd services/onasis-ai-router test
 ```
 
 Some router HTTP tests create loopback listeners. Sandboxed environments that

@@ -87,9 +87,10 @@ Requirements: Node.js 22+ and a configured local development environment. The
 server binds loopback-only by default.
 
 ```bash
-cd /opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router
-npm install
-npm start
+cd /opt/lanonasis/shared_services/onasis-agent-haven
+bun install --frozen-lockfile   # one root bun.lock for every workspace
+cd services/onasis-ai-router
+bun run start                   # runs `node server.js`; the service itself runs on Node 22+
 ```
 
 Defaults:
@@ -105,7 +106,7 @@ settings include `AUTH_GATEWAY_URL`, `API_BASE_URL`, `OLLAMA_BASE_URL`,
 prompt composition locally with:
 
 ```bash
-npm run inspect:prompt -- ask-ai --preview
+bun run inspect:prompt ask-ai --preview
 ```
 
 ## Reliability and privacy
@@ -124,7 +125,7 @@ npm run inspect:prompt -- ask-ai --preview
 ## Tests
 
 ```bash
-npm test
+bun run test
 ```
 
 The suite covers response contracts, OpenAI compatibility, UAI transport

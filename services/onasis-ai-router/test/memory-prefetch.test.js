@@ -27,7 +27,7 @@ function make(overrides = {}) {
   });
 }
 
-const reqFor = (authId, organizationId = 'org-1') => ({ uai: { authId, organizationId } });
+const reqFor = (authId, organizationId = 'org-1') => ({ headers: { authorization: `Bearer token-${authId}` }, uai: { authId, organizationId } });
 
 test('cache key separates two callers asking the identical question', () => {
   const p = make();
@@ -128,7 +128,8 @@ test('a prefetch failure degrades to empty, never throws', async () => {
     logger: undefined,                  // the exact defect being pinned
   });
   const got = await p.brief(
-    { uai: { authId: 'u', organizationId: 'o' } },
+    // Credentialed, so the fetch (and the failing logger path) really runs.
+    { headers: { authorization: 'Bearer t' }, uai: { authId: 'u', organizationId: 'o' } },
     [{ role: 'user', content: 'anything' }],
     {},
   );

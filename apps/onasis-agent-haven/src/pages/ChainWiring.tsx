@@ -4,6 +4,7 @@ import { ArrowLeft, Activity, RefreshCw, Radio, Settings2, X } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { ChainEdge, ChainNode, NodeStatus } from "@/services/chainService";
+import { deriveEdgeStatus } from "@/lib/topologyStatus";
 import {
   useRouterHeartbeat,
   HEARTBEAT_INTERVAL_MS,
@@ -35,7 +36,24 @@ const AGENT_LANES = ["Orchestrator", "Architect", "Coder", "Researcher", "Review
 const AGENT_Y = 570;
 const agentBox = (i: number): Box => ({ x: 480 + i * 102, y: AGENT_Y, w: 94, h: 34 });
 
-const RANK: Record<NodeStatus, number> = { ok: 0, gap: 1, warn: 2, crit: 3 };
+const BEAT_SLOTS = 30;
+const ALL_STATUSES: NodeStatus[] = ["ok", "warn", "crit", "gap", "unknown"];
+
+/** Dash pattern per edge status, so state never relies on colour alone. */
+const EDGE_DASH: Record<NodeStatus, string | undefined> = {
+  ok: undefined, // solid, with moving dots
+  warn: "9 4", // long dashes
+  crit: "2 3", // tight dots, heavier
+  gap: "5 6", // sparse dashes
+  unknown: "1 7", // faint dots
+};
+const EDGE_MEANING: Record<NodeStatus, string> = {
+  ok: "both ends healthy",
+  warn: "an end is degraded",
+  crit: "an end is down",
+  gap: "an end is unreachable / not wired",
+  unknown: "an end is not observed by /health",
+};
 
 function edgePath(a: Box, b: Box) {
   const ax = a.x + a.w / 2, ay = a.y + a.h / 2, bx = b.x + b.w / 2, by = b.y + b.h / 2;
@@ -57,25 +75,27 @@ function Edge({ edge, status, lit, dim }: { edge: ChainEdge; status: NodeStatus;
   if (!a || !b) return null;
   const { d, mid } = edgePath(a, b);
   const stroke = STATUS_STROKE[status];
-  const flowing = !edge.isGap && status !== "crit";
+  const flowing = !edge.isGap && status === "ok";
   return (
-    <g style={{ opacity: dim ? 0.15 : 1, transition: "opacity .2s" }}>
+    <g style={{ opacity: dim ? 0.15 : 1, transition: "opacity .2s" }} role="img" aria-label={`${edge.from} to ${edge.to}: ${STATUS_LABEL[status]} (${EDGE_MEANING[status]})`}>
+      <title>{`${edge.from} → ${edge.to}: ${STATUS_LABEL[status]} — ${EDGE_MEANING[status]}`}</title>
       <path d={d} fill="none" stroke={stroke} strokeOpacity={0.18} strokeWidth={lit ? 7 : 4} strokeLinecap="round" />
       <path
         d={d}
         fill="none"
         stroke={stroke}
-        strokeWidth={lit ? 2.2 : 1.5}
-        strokeDasharray={edge.isGap || status === "gap" ? "5 6" : flowing ? "2 10" : undefined}
+        strokeWidth={(lit ? 2.2 : 1.5) + (status === "crit" ? 0.8 : 0)}
+        strokeOpacity={status === "unknown" ? 0.6 : 1}
+        strokeDasharray={flowing ? "2 10" : EDGE_DASH[status]}
         strokeLinecap="round"
       >
         {flowing && (
-          <animate attributeName="stroke-dashoffset" from="24" to="0" dur={status === "warn" ? "2.4s" : "1.1s"} repeatCount="indefinite" />
+          <animate attributeName="stroke-dashoffset" from="24" to="0" dur="1.1s" repeatCount="indefinite" />
         )}
       </path>
       {flowing && (
         <circle r={2.6} fill={stroke}>
-          <animateMotion dur={status === "warn" ? "4s" : "2.2s"} repeatCount="indefinite" path={d} />
+          <animateMotion dur="2.2s" repeatCount="indefinite" path={d} />
         </circle>
       )}
       {edge.label && lit && (
@@ -89,8 +109,8 @@ function Edge({ edge, status, lit, dim }: { edge: ChainEdge; status: NodeStatus;
 
 // ─── Node ───────────────────────────────────────────────────────────────────
 
-function Node({ node, selected, dim, beat, onSelect }: {
-  node: ChainNode; selected: boolean; dim: boolean; beat: number; onSelect: (id: string) => void;
+function Node({ node, selected, dim, beat, lanes, onSelect }: {
+  node: ChainNode; selected: boolean; dim: boolean; beat: number; lanes: { active: number; total: number } | null; onSelect: (id: string) => void;
 }) {
   const p = POS[node.id];
   if (!p) return null;
@@ -106,6 +126,7 @@ function Node({ node, selected, dim, beat, onSelect }: {
       className="cursor-pointer outline-none"
       style={{ opacity: dim ? 0.3 : 1, transition: "opacity .2s" }}
     >
+      <title>{[node.label, STATUS_LABEL[node.status], node.note].filter(Boolean).join(" — ")}</title>
       <rect
         x={p.x} y={p.y} width={p.w} height={p.h} rx={10}
         className="fill-bgMuted"
@@ -125,6 +146,11 @@ function Node({ node, selected, dim, beat, onSelect }: {
       <text x={p.x + 14} y={p.y + 42} className="fill-fgMuted font-mono" style={{ fontSize: 9.5 }}>
         {node.meta.length > 30 ? node.meta.slice(0, 29) + "…" : node.meta}
       </text>
+      {isRouter && lanes && (
+        <text x={p.x + 14} y={p.y + 58} className="fill-fg font-mono" style={{ fontSize: 10.5 }}>
+          {lanes.active}/{lanes.total} lanes active
+        </text>
+      )}
     </g>
   );
 }
@@ -134,13 +160,10 @@ function Node({ node, selected, dim, beat, onSelect }: {
 export default function ChainWiring() {
   const { data, isFetching, refetch, dataUpdatedAt } = useRouterHeartbeat();
   const [selected, setSelected] = useState<string | null>(null);
-  const [history, setHistory] = useState<{ t: number; ok: boolean; ms: number | null; status: NodeStatus }[]>([]);
   const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    if (!data) return;
-    setHistory((h) => [...h.slice(-29), { t: dataUpdatedAt, ok: data.reachable, ms: data.latencyMs, status: data.routerStatus }]);
-  }, [data, dataUpdatedAt]);
+  const history = data?.heartbeat ?? [];
+  const lastBeat = history[history.length - 1];
+  const beatAgo = lastBeat ? Math.max(0, Math.round((now - lastBeat.t) / 1000)) : null;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -153,20 +176,17 @@ export default function ChainWiring() {
   }, [data]);
   const byId = useMemo(() => Object.fromEntries(nodes.map((n) => [n.id, n])), [nodes]);
 
-  const edgeStatus = (e: ChainEdge): NodeStatus => {
-    if (e.isGap) return "gap";
-    const a = byId[e.from]?.status ?? "gap", b = byId[e.to]?.status ?? "gap";
-    return RANK[a] >= RANK[b] ? a : b;
-  };
+  const edgeStatus = (e: ChainEdge): NodeStatus =>
+    deriveEdgeStatus(byId[e.from]?.status ?? "unknown", byId[e.to]?.status ?? "unknown", e.isGap);
 
   const related = (id: string) =>
     new Set([id, ...(data?.edges ?? []).flatMap((e) => (e.from === id ? [e.to] : e.to === id ? [e.from] : []))]);
   const focus = selected ? related(selected) : null;
   const sel = selected ? byId[selected] : null;
 
-  const counts = nodes.reduce((acc, n) => ({ ...acc, [n.status]: (acc[n.status] ?? 0) + 1 }), {} as Record<NodeStatus, number>);
+  const counts = nodes.reduce((acc, n) => ({ ...acc, [n.status]: (acc[n.status] ?? 0) + 1 }), {} as Partial<Record<NodeStatus, number>>);
   const nextIn = Math.max(0, Math.ceil((dataUpdatedAt + HEARTBEAT_INTERVAL_MS - now) / 1000));
-  const routerStatus = data?.routerStatus ?? "warn";
+  const routerStatus = data?.routerStatus ?? "unknown";
   const beat = dataUpdatedAt;
 
   return (
@@ -205,32 +225,55 @@ export default function ChainWiring() {
       {/* Telemetry strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Router" value={STATUS_LABEL[routerStatus]} tone={STATUS_TEXT[routerStatus]} icon={<Radio className="h-4 w-4" />} />
-        <Stat label="Probe latency" value={data?.latencyMs != null ? `${data.latencyMs} ms` : "unreachable"} tone={data?.reachable ? "text-success" : "text-warning"} icon={<Activity className="h-4 w-4" />} />
+        <Stat label="Probe latency" value={data?.latencyMs != null ? `${data.latencyMs} ms` : "unreachable"} tone={data?.reachable ? "text-success" : "text-warning"} icon={<Activity className="h-4 w-4" />} sub={beatAgo != null ? `last beat ${beatAgo}s ago` : undefined} subPrefix="" />
         <Stat label="Vendors healthy" value={data?.vendorsHealthy ?? "—"} tone="text-fg" />
         <Stat label="Host" value={data?.hostname ?? "—"} tone="text-fg" sub={data ? new Date(data.verifiedAt).toLocaleTimeString() : undefined} />
       </div>
 
-      {/* Heartbeat bars */}
+      {/* Heartbeat strip */}
       <div className="rounded-lg border border-border bg-bgMuted/50 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-xs font-mono text-fgMuted">heartbeat · last {history.length} probes · every {HEARTBEAT_INTERVAL_MS / 1000}s</span>
-          {!data?.reachable && data && (
-            <span className="text-xs text-warning">Router not reachable from this browser — showing last known wiring.</span>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <span className="text-xs font-mono text-fgMuted">
+            heartbeat · last {history.length} probes · every {HEARTBEAT_INTERVAL_MS / 1000}s · pauses while this tab is hidden
+          </span>
+          <span className="text-xs font-mono text-fg" aria-live="polite">
+            {lastBeat?.ok ? `${lastBeat.latencyMs} ms` : lastBeat ? "no response" : "waiting for first beat"}
+            {beatAgo != null && <span className="text-fgMuted"> · last beat {beatAgo}s ago</span>}
+          </span>
         </div>
-        <div className="flex items-end gap-1 h-10">
-          {Array.from({ length: 30 }).map((_, i) => {
-            const h = history[i - (30 - history.length)];
-            const height = h ? (h.ok ? Math.min(100, 25 + (h.ms ?? 0) / 8) : 100) : 10;
-            return (
-              <div
-                key={i}
-                title={h ? `${new Date(h.t).toLocaleTimeString()} · ${h.ok ? `${h.ms} ms` : "no response"}` : "pending"}
-                className={`flex-1 rounded-sm transition-all ${h ? STATUS_BG[h.ok ? h.status : "crit"] : "bg-border"} ${h ? "opacity-80" : "opacity-40"}`}
-                style={{ height: `${height}%` }}
-              />
-            );
-          })}
+        {data && !data.reachable && (
+          <p className="text-xs text-warning mb-2">
+            {routerStatus === "gap"
+              ? "Router unreachable: the last 2 heartbeats failed. Components below are shown as not observed."
+              : "Last heartbeat failed. One more miss marks the router unreachable."}
+          </p>
+        )}
+        {(() => {
+          const maxMs = Math.max(200, ...history.map((h) => h.latencyMs ?? 0));
+          return (
+            <div className="flex items-end gap-1 h-10" role="img" aria-label={`Router heartbeat: ${history.filter((h) => h.ok).length} of ${history.length} recent probes answered`}>
+              {Array.from({ length: BEAT_SLOTS }).map((_, i) => {
+                const h = history[i - (BEAT_SLOTS - history.length)];
+                const tone = !h ? "bg-border" : !h.ok ? STATUS_BG.gap : h.routerStatus === "healthy" ? STATUS_BG.ok : h.routerStatus === "degraded" ? STATUS_BG.warn : STATUS_BG.crit;
+                const height = !h ? 10 : !h.ok ? 100 : Math.max(18, Math.round(((h.latencyMs ?? 0) / maxMs) * 100));
+                return (
+                  <div
+                    key={i}
+                    title={h ? `${new Date(h.t).toLocaleTimeString()} · ${h.ok ? `${h.latencyMs} ms · router ${h.routerStatus ?? "?"} · vendors ${h.vendorsHealthy ?? "?"}` : "no response"}` : "pending"}
+                    className={`flex-1 rounded-sm transition-all ${tone} ${!h ? "opacity-40" : h.ok ? "opacity-80" : "opacity-60 [background-image:repeating-linear-gradient(45deg,transparent_0_3px,hsl(var(--bg))_3px_5px)]"}`}
+                    style={{ height: `${height}%` }}
+                  />
+                );
+              })}
+            </div>
+          );
+        })()}
+        <div className="mt-1.5 flex flex-wrap gap-x-4 text-[10px] font-mono text-fgMuted">
+          <span>bar height = latency</span>
+          <span><span className="text-success">■</span> healthy</span>
+          <span><span className="text-warning">■</span> degraded</span>
+          <span><span className="text-destructive">■</span> unavailable</span>
+          <span><span className="text-brandPurple">▨</span> no response</span>
         </div>
       </div>
 
@@ -281,7 +324,7 @@ export default function ChainWiring() {
             })}
 
             {nodes.map((n) => (
-              <Node key={n.id} node={n} beat={beat} selected={selected === n.id} dim={!!focus && !focus.has(n.id)} onSelect={setSelected} />
+              <Node key={n.id} node={n} beat={beat} lanes={data?.lanes ?? null} selected={selected === n.id} dim={!!focus && !focus.has(n.id)} onSelect={setSelected} />
             ))}
           </svg>
         </div>
@@ -331,14 +374,25 @@ export default function ChainWiring() {
             <>
               <div className="text-sm font-semibold">Legend</div>
               <ul className="space-y-2 text-sm">
-                {(["ok", "warn", "crit", "gap"] as NodeStatus[]).map((s) => (
+                {ALL_STATUSES.map((s) => (
                   <li key={s} className="flex items-center justify-between">
                     <span className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full ${STATUS_BG[s]}`} />{STATUS_LABEL[s]}</span>
                     <span className="font-mono text-xs text-fgMuted">{counts[s] ?? 0}</span>
                   </li>
                 ))}
               </ul>
-              <p className="text-xs text-fgMuted">Moving dots show live traffic paths. Dashed lines are wiring gaps. Click any node to trace its dependencies.</p>
+              <div className="text-sm font-semibold pt-1">Dependency lines</div>
+              <ul className="space-y-2 text-xs" aria-label="Dependency line legend">
+                {ALL_STATUSES.map((s) => (
+                  <li key={s} className="flex items-center gap-2">
+                    <svg width="44" height="8" aria-hidden="true" className="shrink-0">
+                      <line x1="2" y1="4" x2="42" y2="4" stroke={STATUS_STROKE[s]} strokeWidth={s === "crit" ? 2.4 : 1.6} strokeLinecap="round" strokeDasharray={s === "ok" ? undefined : EDGE_DASH[s]} />
+                    </svg>
+                    <span><span className={STATUS_TEXT[s]}>{STATUS_LABEL[s]}</span> · {EDGE_MEANING[s]}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-fgMuted">A line takes the worst state of its two ends. Moving dots appear only on healthy lines. The router can only vouch for itself and its vendors; everything else shows as not observed. Click any node to trace its dependencies.</p>
             </>
           )}
         </aside>
@@ -347,12 +401,12 @@ export default function ChainWiring() {
   );
 }
 
-function Stat({ label, value, tone, icon, sub }: { label: string; value: string; tone: string; icon?: React.ReactNode; sub?: string }) {
+function Stat({ label, value, tone, icon, sub, subPrefix = "verified " }: { label: string; value: string; tone: string; icon?: React.ReactNode; sub?: string; subPrefix?: string }) {
   return (
     <div className="rounded-lg border border-border bg-bgMuted/50 px-3 py-2.5">
       <div className="flex items-center justify-between text-xs font-mono text-fgMuted">{label}{icon}</div>
       <div className={`text-lg font-semibold capitalize mt-0.5 ${tone}`}>{value}</div>
-      {sub && <div className="text-[10px] font-mono text-fgMuted">verified {sub}</div>}
+      {sub && <div className="text-[10px] font-mono text-fgMuted">{subPrefix}{sub}</div>}
     </div>
   );
 }

@@ -37,6 +37,7 @@ const AgentsLayout: React.FC = () => {
             { to: "/docs", label: "docs" },
             { to: "/playground", label: "playground" },
             { to: "/activity", label: "activity" },
+            { to: "/lanes", label: "lanes" },
             { to: "/settings", label: "settings" },
           ].map((l) => (
             <NavLink key={l.to} to={l.to} className={({ isActive }) => `px-2 py-1 rounded ${isActive ? "text-fg bg-bg" : "text-fgMuted hover:text-fg"}`}>

@@ -696,6 +696,14 @@ function orderForUseCase(useCase, useCaseConfig) {
   });
 }
 
+/** Declared vendor ids for a use case (deduped, env overrides applied). INTERNAL. */
+function declaredVendorOrderForUseCase(useCase) {
+  const cfg = USE_CASES[useCase];
+  if (!cfg) return [];
+  const order = orderForUseCase(useCase, cfg);
+  return Array.isArray(order) ? [...new Set(order)] : [];
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -1046,6 +1054,9 @@ module.exports = {
   resolveUseCaseFromRequest,
   USE_CASES,        // Safe to export (no vendor details)
   DEFAULT_USE_CASE,
+  // Internal-only: the declared vendor ids for a use case after env overrides.
+  // Consumed by core/catalog.js to COUNT slots — never serialise the ids.
+  declaredVendorOrderForUseCase,
   // Internal-only: consumed by server-side health checks — NEVER serialise to client responses
   VENDOR_REGISTRY,
   // Internal-only: known vendor ids for validator cross-reference

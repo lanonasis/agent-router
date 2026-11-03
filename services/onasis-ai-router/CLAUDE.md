@@ -55,7 +55,7 @@ node --check server.js && node --check core/ai-service-router.js && node --check
 command curl -s http://127.0.0.1:8000/health
 ```
 
-`npm test` runs the offline suite (node:test, no network). Live verification is still
+`bun run test` runs the offline suite (node:test, no network). Live verification is still
 curl-and-read-the-logs; see "How to verify a change" below.
 
 ## Architecture
@@ -417,6 +417,28 @@ than the canonical package
 traffic, so it is deliberately **not** part of the structural merge — it needs a product decision, and
 `capture-prompt-baseline.js` will show exactly what moves when someone makes it.
 
+## Catalog, profile validation and lane statistics (`core/catalog.js`)
+
+Three read-only endpoints back the dashboard (shapes fixed by
+`apps/onasis-agent-haven/src/services/routerCatalog.ts` — change both together). None of them may
+carry a vendor id, model name or key: vendors appear only as counts.
+
+- `GET /api/v1/catalog` — PUBLIC, `Cache-Control: public, max-age=15`. One persona per `USE_CASES`
+  entry (role/laneKey from the prompt composer's maps, tools from `ToolLoop`, `[]` for `tool-proxy`),
+  loaded profile manifests, and `knownTools`. `servingCapacity.declared` = vendor slots after env
+  overrides (`declaredVendorOrderForUseCase`); `available` = slots that resolve active and are not
+  circuit-open / unhealthy in the cached health snapshot (`VendorHealthMonitor.peek()` — never
+  probes, so a public route cannot trigger paid completions). Status: 0 available = `unavailable`,
+  fewer than declared = `degraded`, else `active`.
+- `POST /api/v1/profiles/validate` — PUBLIC, never persists. Body `{ manifest }`. Runs the loader's
+  `validateManifest`, then adds: unknown `boundUseCase` / tool names (errors); tools the lane does not
+  offer, `memory.write` on a read-only lane, `maxOutputTokens` above the lane ceiling, `publicModel`
+  other than `lzero` (warnings). Non-object manifest -> 400 `{valid:false, errors}`.
+- `GET /api/v1/ops/lane-stats` — authenticated and org-scoped exactly like `/api/v1/ops/activity`
+  (both share `_readActivity`). Per-use-case counts, success rate, avg / p95 latency over finished
+  entries; in-progress entries never affect rate or latency; null use case -> `unknown`.
+  `window.source` is `persisted` when the activity store is enabled (up to 1000 entries), else `buffer`.
+
 ## Tool safety
 
 - **Pass-through lane (`tool-proxy`) — added 2026-10-28.** Some callers own tools this router cannot
@@ -459,6 +481,13 @@ traffic, so it is deliberately **not** part of the structural merge — it needs
   `X-Onasis-Session`; key = auth_id + org + session id; Redis when configured, in-process fallback on
   any Redis error; TTL/turn/char caps via `SESSION_*`. Restored only when the caller sent a single turn;
   never on the public surface or `tool-proxy`. Saved in `routeToAIService` after sanitisation.
+- **Memory calls carry the CALLER's credential only (`core/memory-auth.js`, 2026-11-03).** The router
+  used to add its own `MEMORY_API_KEY` / `MEMORY_AUTH_BEARER` whenever the caller had used the other
+  header type. Concierge callers authenticate with the linked user's Bearer token, the memory API
+  resolves `X-API-Key` first (verified live), so every Slack/Discord user searched the service key
+  owner's (admin's) memory bank. Those env vars are now ignored (warned once at boot); a request with
+  no caller credential gets no memory tools and no prefetch. Never reintroduce a service-credential
+  fallback on a request-scoped memory path.
 - **`memory.*` tools** have NO offered-tools/trusted-identity gate — they dispatch directly whenever
   offered. The tool *definition itself* is the only control. `memory.write` (mutating) is therefore
   withheld by default from every question-answering use case — offered only on `repl-nlp` (explicitly

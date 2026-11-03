@@ -635,3 +635,17 @@ Common causes it will name for you: `OUT OF CREDIT` (billing), `AUTH/CREDENTIAL`
 
 For deeper detail see `services/onasis-ai-router/CLAUDE.md` — the router's own architecture doc. Read it
 before proposing any change to the router itself.
+
+## 11. Catalog, manifest validation and lane statistics
+
+Read-only endpoints for dashboards and tooling. None expose vendor or model identity.
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `GET /api/v1/catalog` | none (cached 15 s) | Lanes (`personas`: role, tools, streamable, `status`, `servingCapacity` counts), loaded `profiles`, `knownTools` |
+| `POST /api/v1/profiles/validate` | none | Body `{ "manifest": {...} }`; returns `{ valid, errors, warnings, normalised? }`. Nothing is stored. A non-object manifest gets HTTP 400 |
+| `GET /api/v1/ops/lane-stats` | `X-API-Key` / Bearer, same as `/api/v1/ops/activity` | Per-use-case totals, success rate, avg/p95 latency, `window.source` (`buffer` or `persisted`); scoped to your organization |
+
+`allowedTools` in a profile is a ceiling: a tool the bound lane does not offer is reported as a
+warning because it will never be available.
+

@@ -77,6 +77,10 @@ class MemoryPrefetch {
 
     const latestUserMessage = this.getLatestUserMessage(messages);
     if (!latestUserMessage) return '';
+    // No caller credential, no brief: before core/memory-auth.js the search
+    // ran with the router's own key, i.e. as that key's owner.
+    const h = (req && req.headers) || {};
+    if (!h.authorization && !h['x-api-key']) return '';
 
     const cacheKey = this._cacheKey(req, body, latestUserMessage);
 

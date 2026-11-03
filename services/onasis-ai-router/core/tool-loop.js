@@ -23,6 +23,7 @@
 const path = require('path');
 const fs = require('fs');
 const { fetchWithRetry } = require('../vendors/_shared/http-client');
+const { callerMemoryHeaders, NO_CALLER_CREDENTIAL_PAYLOAD } = require('./memory-auth');
 
 class ToolLoop {
   // Moved here with its only consumer during the 2026-08-27 extraction. It
@@ -431,6 +432,13 @@ class ToolLoop {
     }
 
     const args = this.safeParseArgs(call.arguments);
+
+    // A memory tool acts for the person asking, with THEIR credential. No
+    // caller credential means no memory bank — never a fallback identity.
+    if (toolName.startsWith('memory.') && !callerMemoryHeaders(req).hasCredential) {
+      this.logger.warn('memory tool refused — request carried no caller credential', { tool: toolName });
+      return { name: toolName, payload: NO_CALLER_CREDENTIAL_PAYLOAD };
+    }
 
     if (toolName === 'memory.search') {
       const payload = await this.toolMemorySearch(args, req);

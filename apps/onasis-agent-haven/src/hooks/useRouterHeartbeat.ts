@@ -20,7 +20,8 @@ export const STATUS_LABEL: Record<NodeStatus, string> = {
   ok: "active",
   warn: "degraded",
   crit: "down",
-  gap: "not wired",
+  gap: "unreachable",
+  unknown: "not observed",
 };
 
 /** Semantic token classes per status — no raw colours. */
@@ -29,16 +30,19 @@ export const STATUS_TEXT: Record<NodeStatus, string> = {
   warn: "text-warning",
   crit: "text-destructive",
   gap: "text-brandPurple",
+  unknown: "text-fgMuted",
 };
 export const STATUS_BG: Record<NodeStatus, string> = {
   ok: "bg-success",
   warn: "bg-warning",
   crit: "bg-destructive",
   gap: "bg-brandPurple",
+  unknown: "bg-fgMuted",
 };
 export const STATUS_STROKE: Record<NodeStatus, string> = {
   ok: "hsl(var(--success))",
   warn: "hsl(var(--warning))",
   crit: "hsl(var(--destructive))",
   gap: "hsl(var(--brand-purple))",
+  unknown: "hsl(var(--fg-muted))",
 };

@@ -1,13 +1,39 @@
 import { getRouterSettings } from "@/lib/routerSettings";
+import { fetchRouterCatalog } from "@/services/routerCatalog";
+import {
+  BEAT_HISTORY,
+  aggregateVendorStates,
+  deriveEdgeStatus,
+  deriveRouterStatus,
+  deriveVendorState,
+  lanesSummary,
+  pushBeat,
+  type BeatSample,
+  type VendorNodeState,
+} from "@/lib/topologyStatus";
+
+export type { BeatSample } from "@/lib/topologyStatus";
 
 /**
  * Chain Wiring Service
  * Fetches live topology and vendor health data from the AI router.
  * Maps the router's /health endpoint to the Concierge chain wiring diagram.
+ *
+ * /health shape (services/onasis-ai-router server.js + core/vendor-health.js):
+ *   { status: healthy|degraded|unavailable, timestamp, vendors_healthy: "3/6",
+ *     services: { api, ai: { <vendor>: { status, response_time, reason?, stale?, circuit? } } } }
+ * It reports vendors only. Redis, auth-gateway, memory API, ops-webhook and the
+ * Slack/Discord bots are NOT in it, so they stay `unknown`.
  */
 
 export interface VendorHealth {
   status: 'healthy' | 'unhealthy' | 'unknown';
+  /** router field names (core/vendor-health.js) */
+  response_time?: number;
+  reason?: string;
+  stale?: boolean;
+  circuit?: string;
+  /** legacy fields, kept for existing importers */
   latencyMs?: number;
   error?: string;
 }
@@ -24,9 +50,9 @@ export interface RouterHealth {
 
 /**
  * Node status derived from router health + static topology data.
- * Matches the CSS classes in the HTML artifact: ok, warn, crit, gap
+ * `unknown` = the router's /health cannot vouch for this component.
  */
-export type NodeStatus = 'ok' | 'warn' | 'crit' | 'gap';
+export type NodeStatus = 'ok' | 'warn' | 'crit' | 'gap' | 'unknown';
 
 /**
  * A node in the chain wiring diagram.
@@ -38,6 +64,10 @@ export interface ChainNode {
   status: NodeStatus;
   /** Which other nodes this node connects to (data-links attribute) */
   links: string[];
+  /** False when /health says nothing about this component (status is `unknown`). */
+  observed?: boolean;
+  /** Extra detail for tooltips/inspector (vendor reason, truncated to 140 chars). */
+  note?: string;
 }
 
 /**
@@ -48,6 +78,8 @@ export interface ChainEdge {
   to: string;
   label?: string;
   isGap?: boolean; // dashed line = missing wiring
+  /** Computed from the two endpoints' live status. */
+  status?: NodeStatus;
 }
 
 /**
@@ -65,22 +97,28 @@ export interface ChainTopology {
   latencyMs: number | null;
   /** Whether the router answered the last probe */
   reachable: boolean;
+  /** Last ~30 /health probes, oldest first */
+  heartbeat: BeatSample[];
+  /** "N/M lanes active" from /api/v1/catalog, null when the catalog is unavailable */
+  lanes: { active: number; total: number } | null;
 }
 
-/** Default: router unreachable or not configured */
+const NOT_OBSERVED = 'not observed by /health';
+
+/** Static wiring. Live status is layered on top; nothing here claims a state. */
 const DEFAULT_TOPOLOGY: ChainTopology = {
   nodes: [
-    { id: 'slack', label: 'Slack bot', meta: 'pm2 · slack-memory-concierge', status: 'gap', links: ['redis', 'authgw', 'memapi', 'router', 'opswebhook'] },
-    { id: 'discord', label: 'Discord bot', meta: 'pm2 · discord-memory-concierge', status: 'gap', links: ['redis', 'authgw', 'memapi', 'router', 'opswebhook'] },
-    { id: 'redis', label: 'Redis', meta: '127.0.0.1:6379 · shared state', status: 'gap', links: ['slack', 'discord'] },
-    { id: 'authgw', label: 'auth-gateway', meta: ':4000 · /v1/auth/resolve/external', status: 'gap', links: ['slack', 'discord', 'memapi'] },
-    { id: 'memapi', label: 'Memory API', meta: ':3001 · mcp-core (MaaS)', status: 'gap', links: ['slack', 'discord', 'authgw', 'router'] },
-    { id: 'router', label: 'ai-router', meta: 'systemd · :8000', status: 'warn', links: ['slack', 'discord', 'memapi', 'anthropic', 'openai', 'lmstudio', 'morevendors', 'opswebhook'] },
-    { id: 'anthropic', label: 'Anthropic', meta: '400 · credit balance', status: 'crit', links: ['router'] },
-    { id: 'openai', label: 'OpenAI', meta: '429 · no credits', status: 'crit', links: ['router'] },
-    { id: 'lmstudio', label: 'LM Studio', meta: ':1234 · unit failed', status: 'warn', links: ['router'] },
-    { id: 'morevendors', label: 'further vendors', meta: 'chain continues, not audited here', status: 'ok', links: ['router'] },
-    { id: 'opswebhook', label: 'ops-webhook', meta: ':5555 · /ops/events', status: 'gap', links: ['slack', 'discord'] },
+    { id: 'slack', label: 'Slack bot', meta: 'pm2 · slack-memory-concierge', status: 'unknown', observed: false, note: NOT_OBSERVED, links: ['redis', 'authgw', 'memapi', 'router', 'opswebhook'] },
+    { id: 'discord', label: 'Discord bot', meta: 'pm2 · discord-memory-concierge', status: 'unknown', observed: false, note: NOT_OBSERVED, links: ['redis', 'authgw', 'memapi', 'router', 'opswebhook'] },
+    { id: 'redis', label: 'Redis', meta: '127.0.0.1:6379 · shared state', status: 'unknown', observed: false, note: NOT_OBSERVED, links: ['slack', 'discord'] },
+    { id: 'authgw', label: 'auth-gateway', meta: ':4000 · /v1/auth/resolve/external', status: 'unknown', observed: false, note: NOT_OBSERVED, links: ['slack', 'discord', 'memapi'] },
+    { id: 'memapi', label: 'Memory API', meta: ':3001 · mcp-core (MaaS)', status: 'unknown', observed: false, note: NOT_OBSERVED, links: ['slack', 'discord', 'authgw', 'router'] },
+    { id: 'router', label: 'ai-router', meta: 'systemd · :8000', status: 'unknown', observed: true, links: ['slack', 'discord', 'memapi', 'anthropic', 'openai', 'lmstudio', 'morevendors', 'opswebhook'] },
+    { id: 'anthropic', label: 'Anthropic', meta: NOT_OBSERVED, status: 'unknown', observed: false, links: ['router'] },
+    { id: 'openai', label: 'OpenAI', meta: NOT_OBSERVED, status: 'unknown', observed: false, links: ['router'] },
+    { id: 'lmstudio', label: 'LM Studio', meta: NOT_OBSERVED, status: 'unknown', observed: false, links: ['router'] },
+    { id: 'morevendors', label: 'further vendors', meta: NOT_OBSERVED, status: 'unknown', observed: false, links: ['router'] },
+    { id: 'opswebhook', label: 'ops-webhook', meta: ':5555 · /ops/events', status: 'unknown', observed: false, note: NOT_OBSERVED, links: ['slack', 'discord'] },
   ],
   edges: [
     { from: 'slack', to: 'redis', label: 'REDIS_URL · lock/idempotency/rate-limit' },
@@ -94,46 +132,97 @@ const DEFAULT_TOPOLOGY: ChainTopology = {
     { from: 'slack', to: 'opswebhook', label: 'OPS_WEBHOOK_URL · /ops/events' },
     { from: 'discord', to: 'opswebhook' },
     { from: 'authgw', to: 'memapi', label: 'org + user scope' },
-    { from: 'router', to: 'anthropic', label: 'credit exhausted' },
-    { from: 'router', to: 'openai', label: 'credit exhausted' },
-    { from: 'router', to: 'lmstudio', label: 'unsupervised' },
+    { from: 'router', to: 'anthropic' },
+    { from: 'router', to: 'openai' },
+    { from: 'router', to: 'lmstudio' },
     { from: 'router', to: 'morevendors' },
     { from: 'router', to: 'memapi', label: 'memory.search / memory.get' },
     { from: 'opswebhook', to: 'router', label: 'no alert path', isGap: true },
   ],
   verifiedAt: new Date().toISOString(),
   hostname: 'srv896342',
-  routerStatus: 'warn',
-  vendorsHealthy: '0/0',
+  routerStatus: 'unknown',
+  vendorsHealthy: '—',
   latencyMs: null,
   reachable: false,
+  heartbeat: [],
+  lanes: null,
 };
 
-/** Map router vendor IDs to diagram node IDs */
+/** Map router vendor IDs to diagram node IDs. Unlisted vendors group under morevendors. */
 const VENDOR_TO_NODE: Record<string, string> = {
   anthropic: 'anthropic',
   openai: 'openai',
   lmstudio: 'lmstudio',
   ollama: 'lmstudio', // Ollama maps to LM Studio in this diagram
-  pi: 'morevendors',
-  minimax: 'morevendors',
-  deepseek: 'morevendors',
-  openclaw: 'morevendors',
-  hermes: 'morevendors',
-  'supabase-edge': 'morevendors',
 };
+const GROUP_NODE = 'morevendors';
+
+// ─── Module state: heartbeat ring buffer + catalog cache ────────────────────
+
+let beatUrl = '';
+let beats: BeatSample[] = [];
+
+const CATALOG_TTL_MS = 60_000;
+let catalogCache: { url: string; at: number; lanes: { active: number; total: number } | null } | null = null;
+
+async function laneSummaryFor(routerUrl: string): Promise<{ active: number; total: number } | null> {
+  if (catalogCache && catalogCache.url === routerUrl && Date.now() - catalogCache.at < CATALOG_TTL_MS) {
+    return catalogCache.lanes;
+  }
+  let lanes: { active: number; total: number } | null = null;
+  try {
+    const catalog = await Promise.race([
+      fetchRouterCatalog({ url: routerUrl, apiKey: '', isOverride: false }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+    ]);
+    lanes = lanesSummary(catalog.personas);
+  } catch {
+    lanes = null; // older router (404) or unreachable: the annotation is simply omitted
+  }
+  catalogCache = { url: routerUrl, at: Date.now(), lanes };
+  return lanes;
+}
+
+/** Read the heartbeat history without probing (empty before the first beat). */
+export function getHeartbeatHistory(): BeatSample[] {
+  return beats;
+}
 
 /**
- * Derive a NodeStatus from a VendorHealth status.
+ * Probe /health once. Any HTTP response with a parseable router body counts as
+ * "answered" — including the router's own 503 `unavailable`, which means it is
+ * up but cannot serve, not that it is unreachable.
  */
-function vendorToNodeStatus(vh: VendorHealth | undefined): NodeStatus {
-  if (!vh || vh.status === 'unknown') return 'warn';
-  return vh.status === 'healthy' ? 'ok' : 'crit';
+async function probeHealth(routerUrl: string): Promise<{ sample: BeatSample; data: RouterHealth | null }> {
+  const controller = new AbortController();
+  const started = performance.now();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(`${routerUrl}/health`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+    const latencyMs = Math.round(performance.now() - started);
+    const data = (await res.json()) as RouterHealth;
+    if (!data || typeof data.status !== 'string') throw new Error('unrecognised /health body');
+    const routerStatus = data.status === 'healthy' || data.status === 'degraded' || data.status === 'unavailable' ? data.status : null;
+    return {
+      sample: { t: Date.now(), ok: true, latencyMs, routerStatus, vendorsHealthy: data.vendors_healthy ?? null },
+      data,
+    };
+  } catch {
+    return { sample: { t: Date.now(), ok: false, latencyMs: null, routerStatus: null, vendorsHealthy: null }, data: null };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**
  * Fetch live chain topology from the AI router's /health endpoint.
- * Falls back to static defaults on error.
+ * Every call is one heartbeat: it is recorded in a ~30-sample ring buffer and
+ * the router node, vendor nodes and edges are all derived from live data.
+ * Components /health cannot vouch for stay `unknown`.
  *
  * `routerUrl` defaults to the operator's saved router address (Settings),
  * falling back to the build-time `VITE_ROUTER_URL`.
@@ -147,66 +236,61 @@ export async function fetchChainTopology(routerUrl = getRouterSettings().url): P
     /* keep default label */
   }
 
-  try {
-    const controller = new AbortController();
-    const started = performance.now();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+  if (beatUrl !== routerUrl) {
+    beatUrl = routerUrl;
+    beats = [];
+  }
 
-    const res = await fetch(`${routerUrl}/health`, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
+  const [{ sample, data }, lanes] = await Promise.all([probeHealth(routerUrl), laneSummaryFor(routerUrl)]);
+  beats = pushBeat(beats, sample, BEAT_HISTORY);
 
-    clearTimeout(timeout);
+  const routerStatus = deriveRouterStatus(beats);
+  topology.routerStatus = routerStatus;
+  topology.heartbeat = beats;
+  topology.reachable = sample.ok;
+  topology.latencyMs = sample.latencyMs;
+  topology.lanes = lanes;
 
-    if (res.ok) {
-      topology.reachable = true;
-      topology.latencyMs = Math.round(performance.now() - started);
-      const data: RouterHealth = await res.json();
-      const ai = data.services?.ai || {};
-      const [healthy, total] = (data.vendors_healthy || '0/0').split('/').map(Number);
+  const router = topology.nodes.find((n) => n.id === 'router')!;
+  router.status = routerStatus;
+  if (!sample.ok) {
+    router.note = routerStatus === 'gap' ? 'last 2 heartbeats failed' : 'last heartbeat failed';
+  }
 
-      topology.vendorsHealthy = data.vendors_healthy;
-      topology.verifiedAt = data.timestamp || topology.verifiedAt;
+  if (data) {
+    topology.vendorsHealthy = data.vendors_healthy ?? '—';
+    topology.verifiedAt = data.timestamp || topology.verifiedAt;
 
-      // Determine overall router status
-      if (data.status === 'healthy') topology.routerStatus = 'ok';
-      else if (data.status === 'unavailable') topology.routerStatus = 'crit';
-      else topology.routerStatus = 'warn';
-
-      // Update vendor nodes from live health data
-      for (const [vendorId, health] of Object.entries(ai)) {
-        const nodeId = VENDOR_TO_NODE[vendorId.toLowerCase()];
-        if (nodeId) {
-          const node = topology.nodes.find((n) => n.id === nodeId);
-          if (node) {
-            node.status = vendorToNodeStatus(health);
-            if (health.error) {
-              node.meta = health.error;
-            }
-          }
-        }
+    // Vendor nodes from services.ai.<vendor>
+    const grouped: VendorNodeState[] = [];
+    for (const [vendorId, health] of Object.entries(data.services?.ai ?? {})) {
+      const state = deriveVendorState(health);
+      const nodeId = VENDOR_TO_NODE[vendorId.toLowerCase()];
+      if (!nodeId) {
+        grouped.push(state);
+        continue;
       }
-
-      // If we have no healthy vendors at all, mark router as crit
-      if (total > 0 && healthy === 0) {
-        topology.routerStatus = 'crit';
-      }
-
-      // Mark all "static" nodes as ok if router is reachable (they're assumed up in the diagram)
-      // Only mark them as gap if we can't reach the router at all
-      if (topology.routerStatus !== 'crit') {
-        for (const node of topology.nodes) {
-          if (node.id !== 'router' && !VENDOR_TO_NODE[node.id.toLowerCase()] && node.status === 'gap') {
-            node.status = 'ok';
-          }
-        }
-      }
+      const node = topology.nodes.find((n) => n.id === nodeId);
+      if (node) applyState(node, state);
     }
-  } catch {
-    // Router unreachable — keep defaults (gap nodes for external services)
-    topology.routerStatus = 'warn';
+    const groupNode = topology.nodes.find((n) => n.id === GROUP_NODE);
+    if (groupNode && grouped.length) applyState(groupNode, aggregateVendorStates(grouped));
+  }
+
+  if (lanes) router.meta = `systemd · :8000 · ${lanes.active}/${lanes.total} lanes active`;
+
+  // Edge status derived from the endpoints, never hardcoded.
+  const status = Object.fromEntries(topology.nodes.map((n) => [n.id, n.status]));
+  for (const e of topology.edges) {
+    e.status = deriveEdgeStatus(status[e.from] ?? 'unknown', status[e.to] ?? 'unknown', e.isGap);
   }
 
   return topology;
+}
+
+function applyState(node: ChainNode, state: VendorNodeState) {
+  node.status = state.status;
+  node.meta = state.meta;
+  node.note = state.note;
+  node.observed = state.status !== 'unknown' || !!state.note;
 }

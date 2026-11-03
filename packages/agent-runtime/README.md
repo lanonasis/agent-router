@@ -160,7 +160,7 @@ Check if at least one active vendor is available for the configured use-case.
 
 ```bash
 # Run tests
-npm test
+bun run test
 # or
 node test/lang-adapter.test.js
 ```

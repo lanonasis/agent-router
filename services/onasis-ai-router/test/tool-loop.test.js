@@ -6,7 +6,7 @@ const { ToolLoop } = require('../core/tool-loop');
 // Regression guard for the Phase 1 extraction: two static class properties were
 // referenced as AIServiceRouter.* from inside tool-loop.js, where that class is
 // out of scope. Live symptom was a 500 "AIServiceRouter is not defined" on the
-// memory-analysis lane — the lane the Slack/Discord concierges use. npm test
+// memory-analysis lane — the lane the Slack/Discord concierges use. the test suite
 // missed it because nothing exercised the tool-definitions path.
 
 test('getToolDefinitionsForUseCase resolves without a ReferenceError', () => {

@@ -191,6 +191,15 @@ class VendorHealthMonitor {
   }
 
   /**
+   * Cache-only view: never probes, never blocks. For public surfaces (the
+   * catalog) that must not be able to trigger paid vendor completions. An
+   * empty object means "nothing probed yet", not "everything is down".
+   */
+  peek() {
+    return this._snapshotFromCache();
+  }
+
+  /**
    * Current health. Serves the cache when fresh, and serves it STALE while a
    * refresh runs in the background rather than making callers wait — except on
    * a cold cache, where there is nothing to serve and one wait is unavoidable.

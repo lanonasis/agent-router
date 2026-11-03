@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { getAgentDocs } from "@/data/agentDocs";
 import { Search, CircleSlash, Loader2, PlusCircle, Thermometer, Network, FileCode2, BookOpen } from "lucide-react";
@@ -18,6 +18,11 @@ import {
 import { AgentType } from "@/types/agent";
 import { useAgents } from "@/hooks/useAgents";
 import { RouterPulseCard } from "@/components/RouterPulseCard";
+import { getDocumentedAgents } from "@/services/agentService";
+import { useRouterCatalog } from "@/hooks/useRouterCatalog";
+import { reconcile, summarise, agentSyncStates } from "@/lib/personaSync";
+import { SyncStatusBanner } from "@/components/agents/SyncStatusBanner";
+import { LivePersonaCard, LiveProfileCard } from "@/components/agents/LivePersonaCard";
 
 const ROLE_ACCENTS: Record<string, string> = {
   Orchestrator: "border-l-brandPurple",
@@ -48,10 +53,38 @@ const AgentsDashboard = () => {
 
   const [sortBy, setSortBy] = useState<string>("recent");
   const [filterRole, setFilterRole] = useState<string>("all");
+  const [syncFilter, setSyncFilter] = useState<string>("all");
+
+  const { catalog, error: catalogError, isLoading: catalogLoading, lastSyncedAt, refresh } = useRouterCatalog();
+  // Reconcile against every documented agent, independent of the my/team filter.
+  const entries = useMemo(() => reconcile(getDocumentedAgents(), catalog), [catalog]);
+  const syncSummary = useMemo(() => summarise(entries), [entries]);
+  const syncStates = useMemo(() => agentSyncStates(entries), [entries]);
+  const liveOnlyPersonaIds = useMemo(
+    () => new Set(entries.flatMap((e) => (e.kind === "persona" ? [e.persona.useCase] : []))),
+    [entries],
+  );
+  const liveOnlyProfileIds = useMemo(
+    () => new Set(entries.flatMap((e) => (e.kind === "profile" ? [e.profile.profileId] : []))),
+    [entries],
+  );
+  const showDocs = syncFilter !== "live-only";
+  const showLive = syncFilter !== "docs-only";
+  const term = searchTerm.toLowerCase();
+  const livePersonas = (catalog?.personas ?? []).filter((p) => {
+    if (syncFilter === "synced" && liveOnlyPersonaIds.has(p.useCase)) return false;
+    if (syncFilter === "live-only" && !liveOnlyPersonaIds.has(p.useCase)) return false;
+    return !term || p.useCase.toLowerCase().includes(term) || p.description.toLowerCase().includes(term) || (p.role ?? "").toLowerCase().includes(term);
+  });
+  const liveProfiles = (catalog?.profiles ?? []).filter((p) => {
+    if (syncFilter === "synced" && liveOnlyProfileIds.has(p.profileId)) return false;
+    if (syncFilter === "live-only" && !liveOnlyProfileIds.has(p.profileId)) return false;
+    return !term || p.profileId.toLowerCase().includes(term) || p.boundUseCase.toLowerCase().includes(term);
+  });
 
   useEffect(() => {
     if (initialAgents) {
-      let sorted = [...initialAgents].sort((a, b) => {
+      const sorted = [...initialAgents].sort((a, b) => {
         switch (sortBy) {
           case "name":
             return a.name.localeCompare(b.name);
@@ -74,12 +107,17 @@ const AgentsDashboard = () => {
           (filterRole === "orchestrator" && agent.type === "Orchestrator") ||
           (filterRole === "sub-agent" && agent.type === "Sub-Agent");
 
-        return searchMatch && roleMatches;
+        const syncMatches =
+          syncFilter === "all" ||
+          (syncFilter === "synced" && syncStates.get(agent.id) === "synced") ||
+          (syncFilter === "docs-only" && syncStates.get(agent.id) !== "synced");
+
+        return searchMatch && roleMatches && syncMatches;
       });
 
       setFilteredAgents(filtered);
     }
-  }, [initialAgents, searchTerm, sortBy, filterRole]);
+  }, [initialAgents, searchTerm, sortBy, filterRole, syncFilter, syncStates]);
 
   if (error) {
     return (
@@ -94,6 +132,14 @@ const AgentsDashboard = () => {
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       <RouterPulseCard />
+      <SyncStatusBanner
+        catalog={catalog}
+        error={catalogError}
+        isLoading={catalogLoading}
+        lastSyncedAt={lastSyncedAt}
+        documentedNotServed={syncSummary.documentedNotServed}
+        onRefresh={refresh}
+      />
       {/* Header */}
       <div className="flex justify-between items-start">
         <div>
@@ -140,6 +186,18 @@ const AgentsDashboard = () => {
             </SelectContent>
           </Select>
 
+          <Select value={syncFilter} onValueChange={setSyncFilter}>
+            <SelectTrigger className="w-[140px] bg-bg border-border" aria-label="Filter by router sync state">
+              <SelectValue placeholder="Sync" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="synced">Synced</SelectItem>
+              <SelectItem value="docs-only">Docs only</SelectItem>
+              <SelectItem value="live-only">Live only</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={sortBy} onValueChange={setSortBy}>
             <SelectTrigger className="w-[130px] bg-bg border-border">
               <SelectValue placeholder="Sort" />
@@ -158,7 +216,7 @@ const AgentsDashboard = () => {
         <div className="flex justify-center items-center h-64">
           <Loader2 className="h-8 w-8 text-brandPurple animate-spin" />
         </div>
-      ) : filteredAgents.length === 0 ? (
+      ) : !showDocs ? null : filteredAgents.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 space-y-3">
           <Search className="h-12 w-12 text-fgMuted opacity-60" />
           <p className="text-fgMuted">No agents match your search.</p>
@@ -263,7 +321,24 @@ const AgentsDashboard = () => {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
+                        {syncStates.has(agent.id) && catalog && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 py-0 ${
+                              syncStates.get(agent.id) === "synced"
+                                ? "border-success/40 text-success"
+                                : "border-border text-fgMuted"
+                            }`}
+                            title={
+                              syncStates.get(agent.id) === "synced"
+                                ? "The router is serving a persona for this agent"
+                                : "Documented, but the router is not serving it"
+                            }
+                          >
+                            {syncStates.get(agent.id) === "synced" ? "Synced" : "Docs only"}
+                          </Badge>
+                        )}
                         <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
                         <span className="text-[11px] text-fgMuted">
                           {agent.status === "active" ? "Active" : "Inactive"}
@@ -276,6 +351,46 @@ const AgentsDashboard = () => {
             );
           })}
         </div>
+      )}
+
+      {showLive && (
+        <section aria-labelledby="live-personas-heading" className="space-y-4">
+          <div>
+            <h2 id="live-personas-heading" className="text-xl font-semibold text-fg tracking-tight">
+              Live personas (router)
+            </h2>
+            <p className="text-fgMuted text-sm mt-0.5">
+              What the router is serving right now, refreshed every 30 seconds.
+            </p>
+          </div>
+          {catalog === null ? (
+            <p className="text-sm text-fgMuted">
+              {catalogLoading ? "Loading live personas…" : "Live personas are unavailable until the router catalog can be read."}
+            </p>
+          ) : livePersonas.length === 0 && liveProfiles.length === 0 ? (
+            <p className="text-sm text-fgMuted">No live personas match.</p>
+          ) : (
+            <>
+              {livePersonas.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                  {livePersonas.map((p) => (
+                    <LivePersonaCard key={p.useCase} persona={p} documented={!liveOnlyPersonaIds.has(p.useCase)} />
+                  ))}
+                </div>
+              )}
+              {liveProfiles.length > 0 && (
+                <>
+                  <h3 className="text-sm font-medium text-fgMuted">Profiles</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                    {liveProfiles.map((p) => (
+                      <LiveProfileCard key={p.profileId} profile={p} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </section>
       )}
     </div>
   );

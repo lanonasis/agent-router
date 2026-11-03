@@ -6,9 +6,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { AgentDocumentationTab } from "@/components/AgentDocumentation";
+import { AgentProfileTab } from "@/components/profile-builder/AgentProfileTab";
 import {
   Brain, FileText, Zap, Shield, FolderOpen, Thermometer,
-  Network, ArrowDownToLine, Route, ShieldAlert, Workflow
+  Network, ArrowDownToLine, Route, ShieldAlert, Workflow, FlaskConical
 } from "lucide-react";
 
 interface AgentDetailTabsProps {
@@ -59,7 +60,7 @@ export function AgentDetailTabs({ agent }: AgentDetailTabsProps) {
 
   return (
     <Tabs defaultValue="identity" className="mt-8">
-      <TabsList className="grid w-full grid-cols-5">
+      <TabsList className="grid w-full grid-cols-6">
         <TabsTrigger value="identity" className="text-xs sm:text-sm">
           <span className="flex items-center gap-1.5">
             <Brain className="h-3.5 w-3.5" />
@@ -88,6 +89,12 @@ export function AgentDetailTabs({ agent }: AgentDetailTabsProps) {
           <span className="flex items-center gap-1.5">
             <FolderOpen className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Source</span>
+          </span>
+        </TabsTrigger>
+        <TabsTrigger value="profile" className="text-xs sm:text-sm">
+          <span className="flex items-center gap-1.5">
+            <FlaskConical className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Profile &amp; Test</span>
           </span>
         </TabsTrigger>
       </TabsList>
@@ -283,6 +290,11 @@ export function AgentDetailTabs({ agent }: AgentDetailTabsProps) {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Router profile builder + test console ── */}
+        <TabsContent value="profile" className="space-y-4">
+          <AgentProfileTab agent={agent} />
         </TabsContent>
       </div>
     </Tabs>

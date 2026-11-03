@@ -155,9 +155,10 @@ test('memory.list: 5xx throws (so the retry wrapper fires); 4xx is a client_erro
 test('memory.list is dispatched through executeToolCall only when offered', async (t) => {
   t.mock.method(globalThis, 'fetch', fakeMemoryApi().fetchImpl);
   const loop = tl();
-  const ok = await loop.executeToolCall({ name: 'memory.list', arguments: '{"limit":2}' }, {}, conciergeTools(), 'memory-analysis');
+  const caller = { headers: { authorization: 'Bearer user-token' } };
+  const ok = await loop.executeToolCall({ name: 'memory.list', arguments: '{"limit":2}' }, caller, conciergeTools(), 'memory-analysis');
   assert.equal(JSON.parse(ok.payload).count, 2);
-  const refused = await loop.executeToolCall({ name: 'memory.list', arguments: {} }, {}, [], 'memory-analysis');
+  const refused = await loop.executeToolCall({ name: 'memory.list', arguments: {} }, caller, [], 'memory-analysis');
   assert.match(refused.payload, /not offered/);
 });
 

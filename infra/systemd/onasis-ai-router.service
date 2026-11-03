@@ -1,28 +1,33 @@
 [Unit]
-Description=Onasis AI Service Router (Ollama + Memory)
+Description=Onasis AI Service Router
 Documentation=https://docs.lanonasis.com
-After=network.target ollama.service
-Wants=ollama.service
+After=network.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/opt/lanonasis/shared_services/onasis_ai_router
+# Non-root since the 2026-08-19 hardening (see services/onasis-ai-router/CLAUDE.md).
+User=onasis-ai-router
+# The live, git-tracked path. NOT /opt/lanonasis/shared_services/onasis_ai_router
+# (no hyphen) — that is a stale 2026-05-23 copy this template used to point at.
+WorkingDirectory=/opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router
 Environment="NODE_ENV=production"
-ExecStart=/usr/bin/dotenvx run --ops-off -f /opt/lanonasis/shared_services/onasis_ai_router/.env.production -- /usr/bin/node /opt/lanonasis/shared_services/onasis_ai_router/server.js
+Environment="BIND_HOST=127.0.0.1"
+# Every vendor credential (OPENAI_API_KEY, ANTHROPIC_API_KEY, MINIMAX_API_KEY, …)
+# and endpoint override (*_BASE_URL) comes from this one encrypted file. Nothing
+# is read from Supabase Edge Function secrets. dotenvx-injected values win over
+# the plain `.env` that server.js's dotenv also reads (dotenv never overrides).
+ExecStart=/usr/bin/dotenvx run --ops-off -f /opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router/.env.production -- /usr/bin/node /opt/lanonasis/shared_services/onasis-agent-haven/services/onasis-ai-router/server.js
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=onasis-ai-router
 
-# Resource limits (adjust based on your needs)
 MemoryMax=2G
 CPUQuota=200%
 
-# Security hardening (optional - uncomment if needed)
-# NoNewPrivileges=true
-# PrivateTmp=true
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

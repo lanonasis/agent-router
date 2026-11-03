@@ -244,6 +244,16 @@ const server = app.listen(PORT, BIND_HOST, () => {
   console.log(`   POST http://localhost:${PORT}/api/v1/ai-chat`);
   console.log(`   POST http://localhost:${PORT}/functions/v1/ai-chat`);
   console.log('\n✨ Ready to serve AI requests\n');
+  // Which credential each cloud adapter loaded, without the credential:
+  // sha256 prefix (same digest `supabase secrets list` shows), length and
+  // endpoint. Answers "which account is this key?" from the journal alone.
+  // Diagnose provider-side status with scripts/check-vendor-keys.js.
+  try {
+    const { describeVendorCredentials } = require('./core/credential-fingerprint');
+    console.log(JSON.stringify({ level: 'info', message: 'Vendor credentials loaded', vendors: describeVendorCredentials() }));
+  } catch (error) {
+    console.warn('Vendor credential summary unavailable:', error.message);
+  }
 
   // Warm the vendor health cache in the background. /health serves stale
   // results while refreshing, so the only request that would ever pay for a

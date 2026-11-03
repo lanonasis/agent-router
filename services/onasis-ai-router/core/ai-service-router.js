@@ -25,6 +25,8 @@ const { summariseHealth } = require('./health-status');
 const openaiCompat = require('./openai-compat');
 const { assertCallerRoles, assertUserContent, MessagePolicyError } = require('./message-policy');
 const { ProfileResolver, ProfileError } = require('./profile-resolver');
+const { buildCatalog, validateProfile, aggregateLaneStats, collectKnownTools, roleName } = require('./catalog');
+const { MAX_READ_LIMIT } = require('./activity-store');
 const {
   sanitizeMemoryAnalysis,
   verifyInternalSecret,
@@ -53,6 +55,7 @@ const sessionMemoryProxy = require('./session-memory-proxy');
 const { withToolGuide, buildSessionNote } = require('./tool-guide');
 const { SessionStore, callerSentHistory } = require('./session-store');
 const { wantsMemoryTools } = require('./tool-affinity');
+const { callerMemoryHeaders, warnIfRetiredFallbackConfigured } = require('./memory-auth');
 
 // Node 18+ has native fetch globally available; no node-fetch needed.
 
@@ -133,6 +136,7 @@ class AIServiceRouter {
     this._opsOrgIds = new Set(
       String(process.env.ROUTER_OPS_ORG_IDS || '').split(',').map((s) => s.trim()).filter(Boolean)
     );
+    warnIfRetiredFallbackConfigured(this.logger);
     const deliverOpsEvent = createOpsEventClient({ logger: this.logger });
     this._emitOpsEvent = (event) => {
       try { this._activity.record(event); } catch { /* never let the trail break a request */ }
@@ -203,6 +207,61 @@ class AIServiceRouter {
     this.promptComposer = new PromptComposer({
       promptsRoot: config.promptsRoot,
       promptMode: config.promptMode,
+    });
+  }
+
+  /**
+   * Live + persisted activity, scoped like /api/v1/ops/activity: one
+   * organization, or everything for ROUTER_OPS_ORG_IDS. Newest first.
+   */
+  async _readActivity({ organizationId, all, window }) {
+    const live = this._activity.list({ organizationId, all, limit: window });
+    let merged = live;
+    let persistence = { enabled: false };
+    try {
+      persistence = await this._activityStore.info();
+      if (persistence.enabled) {
+        const stored = await this._activityStore.recent({
+          limit: window,
+          filter: all ? null : (e) => !!organizationId && e.organizationId === organizationId,
+        });
+        const byId = new Map(stored.map((e) => [e.requestId, e]));
+        for (const e of live) byId.set(e.requestId, e); // memory copy wins (may be newer)
+        merged = Array.from(byId.values())
+          .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
+          .slice(0, window);
+      }
+    } catch (error) {
+      this.logger.warn('Activity history read failed', { error: error.message });
+    }
+    return { merged, persistence };
+  }
+
+  /** Collaborators for core/catalog.js. Vendor ids stay inside these closures. */
+  _catalogDeps() {
+    const vendors = require('../vendors');
+    const writeSet = () => this._toolLoop._memoryWriteAllowedUseCases();
+    const toolNames = (uc) => this._toolLoop.getToolDefinitionsForUseCase(uc).map((t) => t.function.name);
+    return {
+      useCases: vendors.USE_CASES,
+      knownTools: collectKnownTools(this._toolLoop.getToolDefinitions(), this._toolLoop.getCodeToolDefinitions()),
+      toolsForUseCase: (uc) => (uc === 'tool-proxy' ? [] : toolNames(uc)),
+      writesAllowed: (uc) => writeSet().has(uc),
+    };
+  }
+
+  buildServiceCatalog() {
+    const vendors = require('../vendors');
+    const health = this._health.peek(); // cache only: a public route must not trigger probes
+    const roleMap = this.promptComposer.roleMap || {};
+    const laneMap = this.promptComposer.laneMap || {};
+    return buildCatalog({
+      ...this._catalogDeps(),
+      laneInfo: (uc) => ({ role: roleName(roleMap[uc]), laneKey: laneMap[uc] || null }),
+      declaredVendors: (uc) => vendors.declaredVendorOrderForUseCase(uc),
+      eligibleVendors: (uc) => vendors.resolveVendorChainForUseCase(uc).map((v) => v._vendorId),
+      isUnhealthy: (id) => this._scoreboard.isOpen(id) || (health[id] && health[id].status === 'unhealthy'),
+      profiles: this._profiles.list(),
     });
   }
 
@@ -385,27 +444,10 @@ class AIServiceRouter {
     return this.promptComposer.getConfigSnapshot();
   }
 
+  // The caller's own credential and nothing else — see core/memory-auth.js
+  // for the identity leak the old env fallback caused.
   buildAuthHeaders(req) {
-    const headers = {};
-    if (req.headers['authorization']) {
-      headers['Authorization'] = req.headers['authorization'];
-    }
-    if (req.headers['x-api-key']) {
-      headers['X-API-Key'] = req.headers['x-api-key'];
-    }
-    if (req.uai?.authId) {
-      headers['X-UAI-Auth-Id'] = req.uai.authId;
-      headers['X-UAI-Organization'] = req.uai.organizationId || '';
-      headers['X-UAI-Auth-Method'] = req.uai.authMethod || '';
-      headers['X-UAI-Email'] = req.uai.email || '';
-    }
-    if (!headers['Authorization'] && process.env.MEMORY_AUTH_BEARER) {
-      headers['Authorization'] = `Bearer ${process.env.MEMORY_AUTH_BEARER}`;
-    }
-    if (!headers['X-API-Key'] && process.env.MEMORY_API_KEY) {
-      headers['X-API-Key'] = process.env.MEMORY_API_KEY;
-    }
-    return headers;
+    return callerMemoryHeaders(req).headers;
   }
 
   async handleOllamaChat(req) {
@@ -1775,25 +1817,7 @@ class AIServiceRouter {
         const all = !!organizationId && this._opsOrgIds.has(organizationId);
         const limit = Math.min(Math.max(1, parseInt(req.query?.limit, 10) || 50), 500);
         const window = Math.max(limit, this._activity.stats({ all: true }).capacity);
-        const live = this._activity.list({ organizationId, all, limit: window });
-        let merged = live;
-        let persistence = { enabled: false };
-        try {
-          persistence = await this._activityStore.info();
-          if (persistence.enabled) {
-            const stored = await this._activityStore.recent({
-              limit: window,
-              filter: all ? null : (e) => !!organizationId && e.organizationId === organizationId,
-            });
-            const byId = new Map(stored.map((e) => [e.requestId, e]));
-            for (const e of live) byId.set(e.requestId, e); // memory copy wins (may be newer)
-            merged = Array.from(byId.values())
-              .sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))
-              .slice(0, window);
-          }
-        } catch (error) {
-          this.logger.warn('Activity history read failed', { error: error.message });
-        }
+        const { merged, persistence } = await this._readActivity({ organizationId, all, window });
         const count = (s) => merged.filter((e) => e.status === s).length;
         res.json({
           scope: all ? 'all' : 'organization',
@@ -1808,6 +1832,50 @@ class AIServiceRouter {
           },
           persistence,
           entries: merged.slice(0, limit),
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+
+    // ── Catalog, profile validation, lane statistics (shapes: core/catalog.js) ──
+    // Registered before the '/api/:service' wildcard below. The first two are
+    // PUBLIC on purpose: they describe the service (lanes, tools, counts) and
+    // never users, and carry no vendor ids or model names.
+    router.get('/api/v1/catalog', (req, res) => {
+      try {
+        res.set('Cache-Control', 'public, max-age=15');
+        res.json(this.buildServiceCatalog());
+      } catch (error) {
+        this.logger.error('Catalog build failed', { error: error.message });
+        res.status(500).json({ error: 'catalog_unavailable' });
+      }
+    });
+
+    router.post('/api/v1/profiles/validate', (req, res) => {
+      const { status, result } = validateProfile(req.body && req.body.manifest, this._catalogDeps());
+      res.set('Cache-Control', 'no-store');
+      res.status(status).json(result);
+    });
+
+    // Same auth and organization scoping as /api/v1/ops/activity.
+    router.get('/api/v1/ops/lane-stats',
+      this.authenticateRequest,
+      async (req, res) => {
+        const organizationId = req.uai?.organizationId || null;
+        const all = !!organizationId && this._opsOrgIds.has(organizationId);
+        const capacity = this._activity.stats({ all: true }).capacity;
+        const { merged, persistence } = await this._readActivity({
+          organizationId, all, window: Math.max(capacity, MAX_READ_LIMIT),
+        });
+        const starts = merged.map((e) => e.startedAt).filter(Boolean).sort();
+        res.json({
+          scope: all ? 'all' : 'organization',
+          window: {
+            from: starts[0] || null,
+            to: new Date().toISOString(),
+            source: persistence.enabled ? 'persisted' : 'buffer',
+          },
+          lanes: aggregateLaneStats(merged),
           timestamp: new Date().toISOString(),
         });
       }

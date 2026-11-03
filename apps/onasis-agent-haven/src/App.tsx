@@ -13,6 +13,7 @@ import AgentCreate from "./pages/AgentCreate";
 import ChainWiring from "./pages/ChainWiring";
 import DocsBrowser from "./pages/DocsBrowser";
 import RouterActivity from "./pages/RouterActivity";
+import LaneMetrics from "./pages/LaneMetrics";
 import RouterSettings from "./pages/RouterSettings";
 import AgentPlayground from "./pages/AgentPlayground";
 import NotFound from "./pages/NotFound";
@@ -78,6 +79,7 @@ const App = () => (
                 </ProtectedRoute>
               }>
                 <Route path="/activity" element={<RouterActivity />} />
+                <Route path="/lanes" element={<LaneMetrics />} />
                 <Route path="/settings" element={<RouterSettings />} />
                 <Route path="/playground" element={<AgentPlayground />} />
               </Route>

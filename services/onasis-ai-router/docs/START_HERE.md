@@ -209,7 +209,7 @@ pm2 startup
 ### For Testing
 ```bash
 # Run the test suite
-npm test
+bun run test
 ```
 
 ---
