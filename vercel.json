@@ -1,0 +1,6 @@
+{
+  "buildCommand": "bun run --cwd apps/onasis-agent-haven build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "installCommand": "bun install --frozen-lockfile"
+}
